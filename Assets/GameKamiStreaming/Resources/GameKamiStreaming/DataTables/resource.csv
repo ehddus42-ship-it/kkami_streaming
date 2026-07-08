@@ -1,0 +1,7 @@
+resource_id,res_name,resimg_id,effect_id
+20001,팔로우,follow,
+20002,조회수,watcher,
+20003,시청자의_사랑,love,
+20004,도네이션,donation,
+20005,빨간_도네이션,reddoination,
+20006,정기구독자,subscription,
