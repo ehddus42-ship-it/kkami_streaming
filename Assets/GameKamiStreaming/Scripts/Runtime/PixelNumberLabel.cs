@@ -12,14 +12,21 @@ namespace GameKamiStreaming
         readonly List<Image> digits = new List<Image>();
         readonly Dictionary<char, Sprite> spriteByChar = new Dictionary<char, Sprite>();
 
+        void Awake()
+        {
+            Initialize();
+        }
+
         public void Initialize()
         {
+            transform.localScale = Vector3.one;
             spriteByChar.Clear();
             for (var i = 0; i <= 9; i++)
             {
                 spriteByChar[(char)('0' + i)] = LoadSprite(i.ToString());
             }
             spriteByChar['.'] = LoadSprite("dotdot");
+            spriteByChar[':'] = LoadSprite("dotdot");
 
             var layout = GetComponent<HorizontalLayoutGroup>();
             if (layout != null)
@@ -31,6 +38,7 @@ namespace GameKamiStreaming
                 layout.childForceExpandHeight = false;
             }
 
+            CacheExistingDigits();
             for (var i = 0; i < digits.Count; i++)
             {
                 ConfigureDigit(digits[i]);
@@ -44,11 +52,16 @@ namespace GameKamiStreaming
 
         public void SetText(string value)
         {
+            transform.localScale = Vector3.one;
+            if (spriteByChar.Count == 0)
+            {
+                Initialize();
+            }
+
             while (digits.Count < value.Length)
             {
                 var image = new GameObject("Digit", typeof(RectTransform), typeof(Image), typeof(LayoutElement)).GetComponent<Image>();
                 image.transform.SetParent(transform, false);
-                image.preserveAspect = true;
                 ConfigureDigit(image);
                 digits.Add(image);
             }
@@ -66,12 +79,29 @@ namespace GameKamiStreaming
             }
         }
 
+        void CacheExistingDigits()
+        {
+            digits.Clear();
+            for (var i = 0; i < transform.childCount; i++)
+            {
+                var child = transform.GetChild(i);
+                var image = child.GetComponent<Image>();
+                if (image != null)
+                {
+                    digits.Add(image);
+                }
+            }
+        }
+
         static void ConfigureDigit(Image image)
         {
             if (image == null)
             {
                 return;
             }
+
+            image.preserveAspect = false;
+            image.raycastTarget = false;
 
             var rect = image.transform as RectTransform;
             if (rect != null)

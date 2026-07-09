@@ -90,10 +90,12 @@ namespace GameKamiStreaming
         {
             foreach (var row in Read("stage").Rows)
             {
+                var timeLimitSeconds = Int(row, "time_limit_sec");
                 var data = new StageRow
                 {
                     stageId = Int(row, "stage_id"),
                     bossId = Int(row, "boss_id"),
+                    timeLimitSeconds = timeLimitSeconds > 0 ? timeLimitSeconds : 30,
                     effectId = Str(row, "effect_id")
                 };
 

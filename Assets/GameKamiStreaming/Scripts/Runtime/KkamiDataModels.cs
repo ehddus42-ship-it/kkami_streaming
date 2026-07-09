@@ -36,6 +36,7 @@ namespace GameKamiStreaming
     {
         public int stageId;
         public int bossId;
+        public int timeLimitSeconds;
         public string effectId;
         public readonly List<StagePieceWeight> pieceWeights = new List<StagePieceWeight>();
     }
