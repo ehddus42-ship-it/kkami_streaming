@@ -127,6 +127,84 @@
   - `Assets/GameKamiStreaming/Scripts/Runtime/KkamiPrototypeGame.cs`
   - `Assets/GameKamiStreaming/Resources/GameKamiStreaming/Sprites/mining_attack/frame_000.png` ~ `frame_011.png`
 
+## 12. kkami appear 랜덤 표정 출력
+
+- 전달받은 표정 이미지 6개를 `Resources/GameKamiStreaming/Sprites/kkami_appear` 폴더에 추가했다.
+- `kkami appear` 패널의 `Image` 컴포넌트를 런타임에서 찾아 표정 표시 대상으로 사용하도록 했다.
+- 게임 중 5초마다 표정 이미지가 랜덤으로 교체되도록 했다.
+- 같은 이미지가 연속으로 뽑히지 않도록 보정했다.
+- 표정이 바뀔 때 기존 기물 피격 효과처럼 패널이 살짝 커진 뒤 이미지가 교체되고 원래 크기로 돌아오도록 했다.
+- 패널 이미지는 `preserveAspect`를 켜서 가로/세로 비율이 바뀌지 않게 했다.
+- 검증:
+  - `dotnet build kkami_streaming.slnx`
+  - 경고 0개
+  - 오류 0개
+- 관련 파일:
+  - `Assets/GameKamiStreaming/Scripts/Runtime/KkamiPrototypeGame.cs`
+  - `Assets/GameKamiStreaming/Resources/GameKamiStreaming/Sprites/kkami_appear/love.png`
+  - `Assets/GameKamiStreaming/Resources/GameKamiStreaming/Sprites/kkami_appear/confused.png`
+  - `Assets/GameKamiStreaming/Resources/GameKamiStreaming/Sprites/kkami_appear/angry.png`
+  - `Assets/GameKamiStreaming/Resources/GameKamiStreaming/Sprites/kkami_appear/super_angry.png`
+  - `Assets/GameKamiStreaming/Resources/GameKamiStreaming/Sprites/kkami_appear/shocked.png`
+  - `Assets/GameKamiStreaming/Resources/GameKamiStreaming/Sprites/kkami_appear/sad.png`
+
+## 13. 스킬트리 줌/팬 조작 추가
+
+- 스킬트리 빈 필드인 `Skill Tree Empty Fields`를 큰 작업 영역으로 보정하도록 했다.
+- 스킬트리 화면이 열려 있을 때 마우스 휠로 줌 인/줌 아웃할 수 있게 했다.
+- 줌 인 상태에서 마우스 좌클릭을 유지하고 움직이면 스킬트리 작업 영역을 드래그 이동할 수 있게 했다.
+- 드래그/줌 이동 시 콘텐츠가 화면 밖으로 과도하게 빠지지 않도록 위치를 제한했다.
+- 기존 `NEXT STAGE` 버튼은 스킬트리 콘텐츠 확대/이동의 영향을 받지 않도록 캔버스 루트에 고정하고, 항상 화면 우하단 위치와 기존 크기를 유지하도록 했다.
+- 검증:
+  - `dotnet build kkami_streaming.slnx`
+  - 경고 0개
+  - 오류 0개
+- 관련 파일:
+  - `Assets/GameKamiStreaming/Scripts/Runtime/KkamiPrototypeGame.cs`
+
+## 14. 스폰 기물 크기 및 스폰 포인트 비율 보정
+
+- 소환되는 기물의 크기를 기존 랜덤 크기 범위의 80%로 줄였다.
+- `spawnpoint1`~`spawnpoint4`가 화면 크기에 따라 크게 흔들리지 않도록 stretch 앵커 대신 중앙 고정 앵커를 사용하도록 씬 값을 수정했다.
+- 런타임 초기화와 에디터 보정 메뉴에서도 스폰 포인트 앵커, 피벗, 크기, 스케일을 안정화하도록 보강했다.
+- 기존 네 스폰 포인트의 배치 좌표는 유지하면서 화면 크기 변화에 따른 비율 왜곡을 줄이도록 했다.
+- 검증:
+  - `dotnet build kkami_streaming.slnx`
+  - 경고 0개
+  - 오류 0개
+- 관련 파일:
+  - `Assets/GameKamiStreaming/Scripts/Runtime/KkamiPrototypeGame.cs`
+  - `Assets/GameKamiStreaming/Scripts/Editor/KkamiPrototypeSceneBuilder.cs`
+  - `Assets/Scenes/KkamiPrototype.unity`
+
+## 15. 자원 획득 연출 표시 복구
+
+- 자원 획득 시 `Resource Score Fly` 연출 코루틴은 호출되고 있었지만, 부모 오브젝트인 `Effect Layer`가 씬에서 비활성화되어 있어 화면에 보이지 않는 문제를 확인했다.
+- `Effect Layer`를 씬에서 활성화했다.
+- 런타임 초기화 시에도 `Effect Layer`를 찾아 활성화하고 전체 화면 레이어로 보정하도록 했다.
+- 자원 획득 연출을 생성할 때 `Effect Layer`를 다시 최상단 sibling으로 올려 다른 UI 뒤에 가려지지 않도록 했다.
+- 검증:
+  - `dotnet build kkami_streaming.slnx`
+  - 경고 0개
+  - 오류 0개
+- 관련 파일:
+  - `Assets/GameKamiStreaming/Scripts/Runtime/KkamiPrototypeGame.cs`
+  - `Assets/Scenes/KkamiPrototype.unity`
+
+## 16. 스킬트리 배경 이미지 적용
+
+- 전달받은 `skilltree bg.png`를 `Resources/GameKamiStreaming/Sprites/skilltree_bg.png`로 추가했다.
+- `Skill Tree Backdrop` 이미지가 해당 배경 스프라이트를 사용하도록 씬과 런타임 코드를 수정했다.
+- 스킬트리 배경이 캔버스를 덮도록 `AspectRatioFitter.EnvelopeParent` 보정을 추가했다.
+- 검증:
+  - `dotnet build kkami_streaming.slnx`
+  - 경고 0개
+  - 오류 0개
+- 관련 파일:
+  - `Assets/GameKamiStreaming/Scripts/Runtime/KkamiPrototypeGame.cs`
+  - `Assets/GameKamiStreaming/Resources/GameKamiStreaming/Sprites/skilltree_bg.png`
+  - `Assets/Scenes/KkamiPrototype.unity`
+
 ## 참고
 
 - `Assets/Scenes/KkamiPrototype.unity`는 작업 시작 시점부터 수정된 상태였으며, 위 기능들은 주로 런타임 코드에서 캔버스와 UI를 생성하는 방식으로 구현했다.

@@ -166,7 +166,26 @@ namespace GameKamiStreamingEditor
             }
 
             var target = GameObject.Find(objectName);
-            property.objectReferenceValue = target != null ? target.transform as RectTransform : null;
+            var rect = target != null ? target.transform as RectTransform : null;
+            StabilizeSpawnPoint(rect);
+            property.objectReferenceValue = rect;
+        }
+
+        static void StabilizeSpawnPoint(RectTransform spawnPoint)
+        {
+            if (spawnPoint == null)
+            {
+                return;
+            }
+
+            var worldPosition = spawnPoint.position;
+            spawnPoint.anchorMin = new Vector2(0.5f, 0.5f);
+            spawnPoint.anchorMax = new Vector2(0.5f, 0.5f);
+            spawnPoint.pivot = new Vector2(0.5f, 0.5f);
+            spawnPoint.sizeDelta = new Vector2(32f, 32f);
+            spawnPoint.localScale = Vector3.one;
+            spawnPoint.position = worldPosition;
+            EditorUtility.SetDirty(spawnPoint);
         }
 
         static void ConfigureSpriteImports()

@@ -18,16 +18,33 @@ namespace GameKamiStreaming
         const float DamagePerSecond = 7f;
         const float PieceHitboxInsetRatio = 0.24f;
         const int CollectParticleCount = 9;
+        const float SpawnPieceSizeScale = 0.8f;
         const int MiningAttackFrameCount = 12;
         const float MiningAttackFrameSeconds = 0.025f;
         const float MiningAttackSize = 512f;
         const float MiningAttackDisplaySize = MiningAttackSize * 0.7f;
         const string MiningAttackFrameRoot = "GameKamiStreaming/Sprites/mining_attack/frame_";
+        const float KkamiAppearIntervalSeconds = 5f;
+        const float SkillTreeContentSize = 2600f;
+        const float SkillTreeMinZoom = 0.55f;
+        const float SkillTreeMaxZoom = 2.5f;
+        const float SkillTreeZoomStep = 0.18f;
+        const string SkillTreeBackgroundSpriteId = "skilltree_bg";
+        static readonly string[] KkamiAppearSpriteIds =
+        {
+            "kkami_appear/love",
+            "kkami_appear/confused",
+            "kkami_appear/angry",
+            "kkami_appear/super_angry",
+            "kkami_appear/shocked",
+            "kkami_appear/sad"
+        };
 
         readonly Dictionary<int, int> resourceAmounts = new Dictionary<int, int>();
         readonly Dictionary<int, PixelNumberLabel> resourceLabels = new Dictionary<int, PixelNumberLabel>();
         readonly List<DestructiblePieceView> activePieces = new List<DestructiblePieceView>();
         readonly List<Sprite> miningAttackFrames = new List<Sprite>();
+        readonly List<Sprite> kkamiAppearSprites = new List<Sprite>();
 
         [SerializeField] Camera uiCamera;
         [SerializeField] RectTransform canvasRoot;
@@ -38,20 +55,28 @@ namespace GameKamiStreaming
         [SerializeField] RectTransform miningCursor;
         [SerializeField] PixelNumberLabel roundTimerLabel;
         [SerializeField] RectTransform skillTreeCanvasRoot;
+        [SerializeField] RectTransform skillTreeContentRoot;
         [SerializeField] Button startNextStageButton;
         [SerializeField] RectTransform spawnPoint1;
         [SerializeField] RectTransform spawnPoint2;
         [SerializeField] RectTransform spawnPoint3;
         [SerializeField] RectTransform spawnPoint4;
         [SerializeField] Image miningAttackImage;
+        [SerializeField] Image kkamiAppearImage;
 
         KkamiTableDatabase database;
         StageRow currentStage;
         int currentStageIndex;
         float roundRemainingSeconds;
+        float kkamiAppearTimer;
+        float skillTreeZoom = 1f;
+        Vector2 previousSkillTreePointerPosition;
+        int lastKkamiAppearIndex = -1;
         int displayedRoundSecond = -1;
         bool skillTreeOpen;
         bool miningAttackPlaying;
+        bool kkamiAppearChanging;
+        bool skillTreeDragging;
 
         void Awake()
         {
@@ -70,10 +95,12 @@ namespace GameKamiStreaming
         {
             if (skillTreeOpen)
             {
+                UpdateSkillTreeNavigation();
                 return;
             }
 
             UpdateRoundTimer();
+            UpdateKkamiAppear();
             UpdateMiningCursor();
             UpdateMiningAttack();
         }
@@ -193,9 +220,11 @@ namespace GameKamiStreaming
                 resourceAmounts[counter.ResourceId] = 0;
             }
 
+            EnsureEffectLayer();
             EnsurePieceDisplayLayer();
             EnsureSpawnPointReferences();
             EnsureMiningAttackView();
+            EnsureKkamiAppearView();
             EnsureRoundTimerLabel();
             EnsureSkillTreeCanvas();
             ShowGameCanvas();
@@ -207,6 +236,37 @@ namespace GameKamiStreaming
                 cursorImage.sprite = CreateCircleSprite(96, new Color(0.2f, 0.85f, 1f, 0.12f), new Color(0.2f, 0.95f, 1f, 0.48f), 1f);
             }
             miningCursor.gameObject.SetActive(false);
+        }
+
+        void EnsureEffectLayer()
+        {
+            if (effectLayer == null && canvasRoot != null)
+            {
+                var existing = canvasRoot.Find("Effect Layer") as RectTransform;
+                if (existing != null)
+                {
+                    effectLayer = existing;
+                }
+            }
+
+            if (effectLayer == null && canvasRoot != null)
+            {
+                effectLayer = CreateRect("Effect Layer", canvasRoot, Vector2.zero, Vector2.one, new Vector2(0.5f, 0.5f), Vector2.zero, Vector2.zero);
+            }
+
+            if (effectLayer == null)
+            {
+                return;
+            }
+
+            effectLayer.gameObject.SetActive(true);
+            effectLayer.anchorMin = Vector2.zero;
+            effectLayer.anchorMax = Vector2.one;
+            effectLayer.pivot = new Vector2(0.5f, 0.5f);
+            effectLayer.anchoredPosition = Vector2.zero;
+            effectLayer.sizeDelta = Vector2.zero;
+            effectLayer.localScale = Vector3.one;
+            effectLayer.SetAsLastSibling();
         }
 
         void BuildCameraAndCanvas()
@@ -297,11 +357,13 @@ namespace GameKamiStreaming
             scaler.matchWidthOrHeight = 0.5f;
 
             var root = canvas.transform as RectTransform;
-            AddFullScreenImage("Skill Tree Backdrop", null, root, new Color(0.04f, 0.05f, 0.07f, 0.96f));
+            var backdrop = AddFullScreenImage("Skill Tree Backdrop", LoadSprite(SkillTreeBackgroundSpriteId), root, Color.white);
+            ConfigureSkillTreeBackdrop(backdrop);
 
-            var panel = CreateRect("Skill Tree Empty Fields", root, Vector2.zero, Vector2.one, new Vector2(0.5f, 0.5f), Vector2.zero, Vector2.zero);
-            var panelImage = panel.gameObject.AddComponent<Image>();
+            skillTreeContentRoot = CreateRect("Skill Tree Empty Fields", root, new Vector2(0.5f, 0.5f), new Vector2(0.5f, 0.5f), new Vector2(0.5f, 0.5f), Vector2.zero, new Vector2(SkillTreeContentSize, SkillTreeContentSize));
+            var panelImage = skillTreeContentRoot.gameObject.AddComponent<Image>();
             panelImage.color = new Color(0.12f, 0.13f, 0.16f, 0.92f);
+            panelImage.raycastTarget = false;
 
             startNextStageButton = BuildNextStageButton(root);
             root.gameObject.SetActive(false);
@@ -431,6 +493,27 @@ namespace GameKamiStreaming
                     spawnPoint4 = FindRectInGameCanvas("spawnpoint");
                 }
             }
+
+            StabilizeSpawnPoint(spawnPoint1);
+            StabilizeSpawnPoint(spawnPoint2);
+            StabilizeSpawnPoint(spawnPoint3);
+            StabilizeSpawnPoint(spawnPoint4);
+        }
+
+        static void StabilizeSpawnPoint(RectTransform spawnPoint)
+        {
+            if (spawnPoint == null)
+            {
+                return;
+            }
+
+            var worldPosition = spawnPoint.position;
+            spawnPoint.anchorMin = new Vector2(0.5f, 0.5f);
+            spawnPoint.anchorMax = new Vector2(0.5f, 0.5f);
+            spawnPoint.pivot = new Vector2(0.5f, 0.5f);
+            spawnPoint.sizeDelta = new Vector2(32f, 32f);
+            spawnPoint.localScale = Vector3.one;
+            spawnPoint.position = worldPosition;
         }
 
         void EnsureMiningAttackView()
@@ -497,6 +580,150 @@ namespace GameKamiStreaming
             }
         }
 
+        void EnsureKkamiAppearView()
+        {
+            LoadKkamiAppearSprites();
+            if (kkamiAppearImage == null)
+            {
+                var existing = FindRectInGameCanvas("kkami appear");
+                if (existing != null)
+                {
+                    kkamiAppearImage = existing.GetComponent<Image>();
+                    if (kkamiAppearImage == null)
+                    {
+                        kkamiAppearImage = existing.gameObject.AddComponent<Image>();
+                    }
+                }
+            }
+
+            if (kkamiAppearImage == null)
+            {
+                return;
+            }
+
+            kkamiAppearImage.type = Image.Type.Simple;
+            kkamiAppearImage.color = Color.white;
+            kkamiAppearImage.preserveAspect = true;
+            kkamiAppearImage.raycastTarget = false;
+            ShowRandomKkamiAppearSprite(true);
+        }
+
+        void LoadKkamiAppearSprites()
+        {
+            if (kkamiAppearSprites.Count > 0)
+            {
+                return;
+            }
+
+            foreach (var id in KkamiAppearSpriteIds)
+            {
+                var sprite = LoadSprite(id);
+                if (sprite != null)
+                {
+                    kkamiAppearSprites.Add(sprite);
+                    continue;
+                }
+
+                var texture = Resources.Load<Texture2D>(SpriteRoot + id);
+                if (texture != null)
+                {
+                    kkamiAppearSprites.Add(Sprite.Create(texture, new Rect(0f, 0f, texture.width, texture.height), new Vector2(0.5f, 0.5f), 100f));
+                }
+            }
+        }
+
+        void UpdateKkamiAppear()
+        {
+            if (kkamiAppearImage == null || kkamiAppearSprites.Count == 0 || kkamiAppearChanging)
+            {
+                return;
+            }
+
+            kkamiAppearTimer -= Time.deltaTime;
+            if (kkamiAppearTimer > 0f)
+            {
+                return;
+            }
+
+            StartCoroutine(PlayKkamiAppearChange());
+        }
+
+        void ShowRandomKkamiAppearSprite(bool force)
+        {
+            if (kkamiAppearImage == null || kkamiAppearSprites.Count == 0)
+            {
+                return;
+            }
+
+            if (!force && kkamiAppearTimer > 0f)
+            {
+                return;
+            }
+
+            var nextIndex = Random.Range(0, kkamiAppearSprites.Count);
+            if (kkamiAppearSprites.Count > 1 && nextIndex == lastKkamiAppearIndex)
+            {
+                nextIndex = (nextIndex + Random.Range(1, kkamiAppearSprites.Count)) % kkamiAppearSprites.Count;
+            }
+
+            kkamiAppearImage.sprite = kkamiAppearSprites[nextIndex];
+            kkamiAppearImage.enabled = true;
+            lastKkamiAppearIndex = nextIndex;
+            kkamiAppearTimer = KkamiAppearIntervalSeconds;
+        }
+
+        IEnumerator PlayKkamiAppearChange()
+        {
+            if (kkamiAppearImage == null || kkamiAppearSprites.Count == 0)
+            {
+                yield break;
+            }
+
+            kkamiAppearChanging = true;
+            var rect = kkamiAppearImage.rectTransform;
+            var baseScale = rect.localScale;
+            var targetScale = baseScale * 1.06f;
+            const float growDuration = 0.06f;
+            const float shrinkDuration = 0.08f;
+
+            var elapsed = 0f;
+            while (elapsed < growDuration)
+            {
+                if (rect == null)
+                {
+                    kkamiAppearChanging = false;
+                    yield break;
+                }
+
+                elapsed += Time.deltaTime;
+                rect.localScale = Vector3.Lerp(baseScale, targetScale, Mathf.Clamp01(elapsed / growDuration));
+                yield return null;
+            }
+
+            ShowRandomKkamiAppearSprite(true);
+
+            elapsed = 0f;
+            while (elapsed < shrinkDuration)
+            {
+                if (rect == null)
+                {
+                    kkamiAppearChanging = false;
+                    yield break;
+                }
+
+                elapsed += Time.deltaTime;
+                rect.localScale = Vector3.Lerp(targetScale, baseScale, Mathf.Clamp01(elapsed / shrinkDuration));
+                yield return null;
+            }
+
+            if (rect != null)
+            {
+                rect.localScale = baseScale;
+            }
+
+            kkamiAppearChanging = false;
+        }
+
         RectTransform FindRectInGameCanvas(string objectName)
         {
             if (canvasRoot == null)
@@ -505,6 +732,25 @@ namespace GameKamiStreaming
             }
 
             var rects = canvasRoot.GetComponentsInChildren<RectTransform>(true);
+            foreach (var rect in rects)
+            {
+                if (rect.name == objectName)
+                {
+                    return rect;
+                }
+            }
+
+            return null;
+        }
+
+        static RectTransform FindChildRect(RectTransform root, string objectName)
+        {
+            if (root == null)
+            {
+                return null;
+            }
+
+            var rects = root.GetComponentsInChildren<RectTransform>(true);
             foreach (var rect in rects)
             {
                 if (rect.name == objectName)
@@ -546,6 +792,8 @@ namespace GameKamiStreaming
         {
             if (skillTreeCanvasRoot != null)
             {
+                EnsureSkillTreeBackdrop();
+                EnsureSkillTreeContentRoot();
                 EnsureStartNextStageButton();
                 skillTreeCanvasRoot.gameObject.SetActive(false);
                 return;
@@ -556,19 +804,143 @@ namespace GameKamiStreaming
             {
                 skillTreeCanvasRoot = existing.transform as RectTransform;
                 startNextStageButton = existing.GetComponentInChildren<Button>(true);
+                EnsureSkillTreeBackdrop();
+                EnsureSkillTreeContentRoot();
                 EnsureStartNextStageButton();
                 skillTreeCanvasRoot.gameObject.SetActive(false);
                 return;
             }
 
             skillTreeCanvasRoot = BuildSkillTreeCanvas();
+            EnsureSkillTreeBackdrop();
+            EnsureSkillTreeContentRoot();
+            EnsureStartNextStageButton();
+        }
+
+        void EnsureSkillTreeBackdrop()
+        {
+            if (skillTreeCanvasRoot == null)
+            {
+                return;
+            }
+
+            var backdropRect = FindChildRect(skillTreeCanvasRoot, "Skill Tree Backdrop");
+            if (backdropRect == null)
+            {
+                var image = AddFullScreenImage("Skill Tree Backdrop", LoadSprite(SkillTreeBackgroundSpriteId), skillTreeCanvasRoot, Color.white);
+                backdropRect = image.rectTransform;
+            }
+
+            backdropRect.SetParent(skillTreeCanvasRoot, false);
+            backdropRect.anchorMin = Vector2.zero;
+            backdropRect.anchorMax = Vector2.one;
+            backdropRect.pivot = new Vector2(0.5f, 0.5f);
+            backdropRect.anchoredPosition = Vector2.zero;
+            backdropRect.sizeDelta = Vector2.zero;
+            backdropRect.SetAsFirstSibling();
+
+            var backdrop = backdropRect.GetComponent<Image>();
+            if (backdrop != null)
+            {
+                ConfigureSkillTreeBackdrop(backdrop);
+            }
+        }
+
+        static void ConfigureSkillTreeBackdrop(Image backdrop)
+        {
+            if (backdrop == null)
+            {
+                return;
+            }
+
+            var sprite = LoadSprite(SkillTreeBackgroundSpriteId);
+            backdrop.sprite = sprite;
+            backdrop.color = Color.white;
+            backdrop.type = Image.Type.Simple;
+            backdrop.preserveAspect = true;
+            backdrop.raycastTarget = false;
+
+            var fitter = backdrop.GetComponent<AspectRatioFitter>();
+            if (fitter == null)
+            {
+                fitter = backdrop.gameObject.AddComponent<AspectRatioFitter>();
+            }
+
+            fitter.aspectMode = AspectRatioFitter.AspectMode.EnvelopeParent;
+            fitter.aspectRatio = sprite != null && sprite.rect.height > 0f ? sprite.rect.width / sprite.rect.height : 16f / 9f;
+        }
+
+        void EnsureSkillTreeContentRoot()
+        {
+            if (skillTreeCanvasRoot == null)
+            {
+                return;
+            }
+
+            if (skillTreeContentRoot == null)
+            {
+                var existing = FindChildRect(skillTreeCanvasRoot, "Skill Tree Empty Fields");
+                if (existing != null)
+                {
+                    skillTreeContentRoot = existing;
+                }
+            }
+
+            if (skillTreeContentRoot == null)
+            {
+                skillTreeContentRoot = CreateRect("Skill Tree Empty Fields", skillTreeCanvasRoot, new Vector2(0.5f, 0.5f), new Vector2(0.5f, 0.5f), new Vector2(0.5f, 0.5f), Vector2.zero, new Vector2(SkillTreeContentSize, SkillTreeContentSize));
+                var image = skillTreeContentRoot.gameObject.AddComponent<Image>();
+                image.color = new Color(0.12f, 0.13f, 0.16f, 0.92f);
+            }
+
+            skillTreeContentRoot.SetParent(skillTreeCanvasRoot, false);
+            skillTreeContentRoot.anchorMin = new Vector2(0.5f, 0.5f);
+            skillTreeContentRoot.anchorMax = new Vector2(0.5f, 0.5f);
+            skillTreeContentRoot.pivot = new Vector2(0.5f, 0.5f);
+            skillTreeContentRoot.sizeDelta = new Vector2(SkillTreeContentSize, SkillTreeContentSize);
+            skillTreeContentRoot.localScale = Vector3.one * skillTreeZoom;
+
+            var imageComponent = skillTreeContentRoot.GetComponent<Image>();
+            if (imageComponent != null)
+            {
+                imageComponent.color = new Color(0.12f, 0.13f, 0.16f, 0.92f);
+                imageComponent.raycastTarget = false;
+            }
+
+            ClampSkillTreeContentPosition();
         }
 
         void EnsureStartNextStageButton()
         {
+            if (startNextStageButton == null && skillTreeCanvasRoot != null)
+            {
+                var existing = FindChildRect(skillTreeCanvasRoot, "Start Next Stage Button");
+                if (existing != null)
+                {
+                    startNextStageButton = existing.GetComponent<Button>();
+                }
+            }
+
             if (startNextStageButton == null || startNextStageButton.onClick == null)
             {
                 return;
+            }
+
+            if (skillTreeCanvasRoot != null && startNextStageButton.transform.parent != skillTreeCanvasRoot)
+            {
+                startNextStageButton.transform.SetParent(skillTreeCanvasRoot, false);
+            }
+
+            var rect = startNextStageButton.transform as RectTransform;
+            if (rect != null)
+            {
+                rect.anchorMin = new Vector2(1f, 0f);
+                rect.anchorMax = new Vector2(1f, 0f);
+                rect.pivot = new Vector2(1f, 0f);
+                rect.anchoredPosition = new Vector2(-56f, 56f);
+                rect.sizeDelta = new Vector2(430f, 120f);
+                rect.localScale = Vector3.one;
+                rect.SetAsLastSibling();
             }
 
             startNextStageButton.onClick.RemoveListener(StartNextStageFromSkillTree);
@@ -634,10 +1006,12 @@ namespace GameKamiStreaming
         void OpenSkillTree()
         {
             skillTreeOpen = true;
+            skillTreeDragging = false;
             HideMiningAttack();
             ClearActivePieces();
 
             EnsureSkillTreeCanvas();
+            ApplySkillTreeTransform();
             if (skillTreeCanvasRoot != null)
             {
                 skillTreeCanvasRoot.gameObject.SetActive(true);
@@ -656,6 +1030,108 @@ namespace GameKamiStreaming
             ShowGameCanvas();
             ResetRoundTimer();
             FillStagePieces();
+        }
+
+        void UpdateSkillTreeNavigation()
+        {
+            if (skillTreeCanvasRoot == null || skillTreeContentRoot == null)
+            {
+                EnsureSkillTreeCanvas();
+                return;
+            }
+
+            if (TryGetPointerPosition(out var pointerPosition) && TryGetScrollDelta(out var scrollDelta) && Mathf.Abs(scrollDelta) > 0.001f)
+            {
+                var normalizedScroll = Mathf.Abs(scrollDelta) > 10f ? scrollDelta / 120f : scrollDelta;
+                ZoomSkillTree(Mathf.Clamp(normalizedScroll, -1f, 1f), pointerPosition);
+            }
+
+            if (!TryGetPointerPosition(out pointerPosition) || !TryGetLeftMouseButton())
+            {
+                skillTreeDragging = false;
+                return;
+            }
+
+            if (skillTreeZoom <= 1.001f || IsPointerOverNextStageButton(pointerPosition))
+            {
+                skillTreeDragging = false;
+                return;
+            }
+
+            if (!skillTreeDragging)
+            {
+                previousSkillTreePointerPosition = pointerPosition;
+                skillTreeDragging = true;
+                return;
+            }
+
+            if (RectTransformUtility.ScreenPointToLocalPointInRectangle(skillTreeCanvasRoot, previousSkillTreePointerPosition, uiCamera, out var previousPoint) &&
+                RectTransformUtility.ScreenPointToLocalPointInRectangle(skillTreeCanvasRoot, pointerPosition, uiCamera, out var currentPoint))
+            {
+                skillTreeContentRoot.anchoredPosition += currentPoint - previousPoint;
+                ClampSkillTreeContentPosition();
+            }
+
+            previousSkillTreePointerPosition = pointerPosition;
+        }
+
+        void ZoomSkillTree(float scrollStep, Vector2 pointerPosition)
+        {
+            if (skillTreeCanvasRoot == null || skillTreeContentRoot == null)
+            {
+                return;
+            }
+
+            var previousZoom = skillTreeZoom;
+            skillTreeZoom = Mathf.Clamp(skillTreeZoom + scrollStep * SkillTreeZoomStep, SkillTreeMinZoom, SkillTreeMaxZoom);
+            if (Mathf.Approximately(previousZoom, skillTreeZoom))
+            {
+                return;
+            }
+
+            if (RectTransformUtility.ScreenPointToLocalPointInRectangle(skillTreeCanvasRoot, pointerPosition, uiCamera, out var canvasPoint))
+            {
+                var contentPointAtPointer = (canvasPoint - skillTreeContentRoot.anchoredPosition) / previousZoom;
+                skillTreeContentRoot.anchoredPosition = canvasPoint - contentPointAtPointer * skillTreeZoom;
+            }
+
+            ApplySkillTreeTransform();
+        }
+
+        void ApplySkillTreeTransform()
+        {
+            if (skillTreeContentRoot == null)
+            {
+                return;
+            }
+
+            skillTreeContentRoot.localScale = Vector3.one * skillTreeZoom;
+            ClampSkillTreeContentPosition();
+        }
+
+        void ClampSkillTreeContentPosition()
+        {
+            if (skillTreeCanvasRoot == null || skillTreeContentRoot == null)
+            {
+                return;
+            }
+
+            var viewportSize = skillTreeCanvasRoot.rect.size;
+            var contentSize = skillTreeContentRoot.rect.size * skillTreeZoom;
+            var maxOffset = new Vector2(
+                Mathf.Max(0f, (contentSize.x - viewportSize.x) * 0.5f),
+                Mathf.Max(0f, (contentSize.y - viewportSize.y) * 0.5f));
+
+            var position = skillTreeContentRoot.anchoredPosition;
+            position.x = Mathf.Clamp(position.x, -maxOffset.x, maxOffset.x);
+            position.y = Mathf.Clamp(position.y, -maxOffset.y, maxOffset.y);
+            skillTreeContentRoot.anchoredPosition = position;
+        }
+
+        bool IsPointerOverNextStageButton(Vector2 pointerPosition)
+        {
+            var rect = startNextStageButton != null ? startNextStageButton.transform as RectTransform : null;
+            return rect != null && RectTransformUtility.RectangleContainsScreenPoint(rect, pointerPosition, uiCamera);
         }
 
         void ShowGameCanvas()
@@ -713,7 +1189,7 @@ namespace GameKamiStreaming
                 return;
             }
 
-            var size = Random.Range(155f, 215f);
+            var size = Random.Range(155f, 215f) * SpawnPieceSizeScale;
             var half = size * 0.5f;
             EnsurePieceDisplayLayer();
             var displayPosition = PickSpawnPosition(half);
@@ -1108,6 +1584,13 @@ namespace GameKamiStreaming
 
         void PlayCollectBurst(RectTransform source, int resourceId)
         {
+            EnsureEffectLayer();
+            if (effectLayer == null || source == null)
+            {
+                return;
+            }
+
+            effectLayer.SetAsLastSibling();
             var resource = database.GetResource(resourceId);
             var sprite = resource != null ? LoadSprite(resource.imageId) : null;
             var startPosition = (Vector2)effectLayer.InverseTransformPoint(source.position);
@@ -1288,6 +1771,39 @@ namespace GameKamiStreaming
             return true;
 #else
             screenPosition = Vector2.zero;
+            return false;
+#endif
+        }
+
+        static bool TryGetScrollDelta(out float scrollDelta)
+        {
+#if ENABLE_INPUT_SYSTEM
+            if (Mouse.current != null)
+            {
+                scrollDelta = Mouse.current.scroll.ReadValue().y;
+                return true;
+            }
+#endif
+#if ENABLE_LEGACY_INPUT_MANAGER
+            scrollDelta = Input.mouseScrollDelta.y;
+            return true;
+#else
+            scrollDelta = 0f;
+            return false;
+#endif
+        }
+
+        static bool TryGetLeftMouseButton()
+        {
+#if ENABLE_INPUT_SYSTEM
+            if (Mouse.current != null)
+            {
+                return Mouse.current.leftButton.isPressed;
+            }
+#endif
+#if ENABLE_LEGACY_INPUT_MANAGER
+            return Input.GetMouseButton(0);
+#else
             return false;
 #endif
         }
