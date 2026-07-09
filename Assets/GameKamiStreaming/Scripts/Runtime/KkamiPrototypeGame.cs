@@ -25,11 +25,18 @@ namespace GameKamiStreaming
         const float MiningAttackDisplaySize = MiningAttackSize * 0.7f;
         const string MiningAttackFrameRoot = "GameKamiStreaming/Sprites/mining_attack/frame_";
         const float KkamiAppearIntervalSeconds = 5f;
-        const float SkillTreeContentSize = 2600f;
+        const float SkillTreeContentSize = 4200f;
         const float SkillTreeMinZoom = 0.55f;
         const float SkillTreeMaxZoom = 2.5f;
         const float SkillTreeZoomStep = 0.18f;
         const string SkillTreeBackgroundSpriteId = "skilltree_bg";
+        const string SkillTreeInfoSpriteId = "skilltree_info";
+        const string SkillTreeTestButtonSpriteId = "skilltree_button_test";
+        const int StageSpriteGroupSize = 10;
+        const int StageSpriteGroupCount = 5;
+        const int StageIdSpriteBase = 30001;
+        const float StageIndicatorNumberScale = 1.45f;
+        const string StageIndicatorSpriteId = "stage_ui";
         static readonly string[] KkamiAppearSpriteIds =
         {
             "kkami_appear/love",
@@ -42,6 +49,7 @@ namespace GameKamiStreaming
 
         readonly Dictionary<int, int> resourceAmounts = new Dictionary<int, int>();
         readonly Dictionary<int, PixelNumberLabel> resourceLabels = new Dictionary<int, PixelNumberLabel>();
+        readonly Dictionary<int, PixelNumberLabel> skillTreeResourceLabels = new Dictionary<int, PixelNumberLabel>();
         readonly List<DestructiblePieceView> activePieces = new List<DestructiblePieceView>();
         readonly List<Sprite> miningAttackFrames = new List<Sprite>();
         readonly List<Sprite> kkamiAppearSprites = new List<Sprite>();
@@ -56,11 +64,15 @@ namespace GameKamiStreaming
         [SerializeField] PixelNumberLabel roundTimerLabel;
         [SerializeField] RectTransform skillTreeCanvasRoot;
         [SerializeField] RectTransform skillTreeContentRoot;
+        [SerializeField] RectTransform skillTreeTooltipRoot;
+        [SerializeField] RectTransform stageIndicatorRoot;
         [SerializeField] Button startNextStageButton;
         [SerializeField] RectTransform spawnPoint1;
         [SerializeField] RectTransform spawnPoint2;
         [SerializeField] RectTransform spawnPoint3;
         [SerializeField] RectTransform spawnPoint4;
+        [SerializeField] Image stageImage;
+        [SerializeField] PixelNumberLabel stageNumberLabel;
         [SerializeField] Image miningAttackImage;
         [SerializeField] Image kkamiAppearImage;
 
@@ -148,10 +160,7 @@ namespace GameKamiStreaming
             }
 
             resourceAmounts[piece.resourceId] += Mathf.Max(0, piece.resourceAmount);
-            if (resourceLabels.TryGetValue(piece.resourceId, out var label))
-            {
-                label.SetValue(resourceAmounts[piece.resourceId]);
-            }
+            RefreshResourceLabels(piece.resourceId);
 
             PlayCollectBurst(source, piece.resourceId);
             StartCoroutine(RespawnAfterDelay(0.45f));
@@ -202,6 +211,7 @@ namespace GameKamiStreaming
 
             resourceAmounts.Clear();
             resourceLabels.Clear();
+            skillTreeResourceLabels.Clear();
             foreach (var resource in database.Resources)
             {
                 resourceAmounts[resource.resourceId] = 0;
@@ -221,13 +231,18 @@ namespace GameKamiStreaming
             }
 
             EnsureEffectLayer();
+            EnsureStageImage();
             EnsurePieceDisplayLayer();
             EnsureSpawnPointReferences();
             EnsureMiningAttackView();
             EnsureKkamiAppearView();
             EnsureRoundTimerLabel();
+            EnsureStageIndicator();
             EnsureSkillTreeCanvas();
+            RefreshAllResourceLabels();
             ShowGameCanvas();
+            ApplyCurrentStageSprite();
+            RefreshStageNumberLabel();
             ResetRoundTimer();
 
             var cursorImage = miningCursor.GetComponent<Image>();
@@ -269,6 +284,59 @@ namespace GameKamiStreaming
             effectLayer.SetAsLastSibling();
         }
 
+        void EnsureStageImage()
+        {
+            if (stageImage == null && stageArea != null)
+            {
+                var existing = stageArea.Find("Stage") as RectTransform;
+                if (existing != null)
+                {
+                    stageImage = existing.GetComponent<Image>();
+                    if (stageImage == null)
+                    {
+                        stageImage = existing.gameObject.AddComponent<Image>();
+                    }
+                }
+            }
+
+            if (stageImage == null || stageArea == null)
+            {
+                return;
+            }
+
+            stageImage.raycastTarget = false;
+            stageImage.preserveAspect = true;
+        }
+
+        void ApplyCurrentStageSprite()
+        {
+            EnsureStageImage();
+            if (stageImage == null)
+            {
+                return;
+            }
+
+            var sprite = LoadSprite(GetCurrentStageSpriteId());
+            if (sprite == null)
+            {
+                sprite = LoadSprite("stage");
+            }
+
+            stageImage.sprite = sprite;
+        }
+
+        string GetCurrentStageSpriteId()
+        {
+            var stageOffset = currentStage != null ? currentStage.stageId - StageIdSpriteBase : currentStageIndex;
+            if (stageOffset < 0)
+            {
+                stageOffset = currentStageIndex;
+            }
+
+            var group = Mathf.Clamp((stageOffset / StageSpriteGroupSize) + 1, 1, StageSpriteGroupCount);
+            return "stage" + group;
+        }
+
         void BuildCameraAndCanvas()
         {
             uiCamera = Camera.main;
@@ -306,6 +374,7 @@ namespace GameKamiStreaming
             stageArea = CreateRect("Stage Area", canvasRoot, new Vector2(0.5f, 0f), new Vector2(0.5f, 0f), new Vector2(0.5f, 0f), new Vector2(0f, 110f), new Vector2(1120f, 1220f));
             var stage = AddAnchoredImage("Stage", LoadSprite("stage"), stageArea, Vector2.zero, Vector2.one, new Vector2(0.5f, 0.5f), Vector2.zero, Vector2.zero);
             stage.preserveAspect = true;
+            stageImage = stage;
 
             var counterPanel = CreateRect("Resource Counters", canvasRoot, new Vector2(0f, 1f), new Vector2(1f, 1f), new Vector2(0.5f, 1f), new Vector2(0f, -70f), new Vector2(0f, 210f));
             var resourceIndex = 0;
@@ -321,6 +390,7 @@ namespace GameKamiStreaming
             effectLayer.SetAsLastSibling();
 
             roundTimerLabel = BuildRoundTimer(canvasRoot);
+            stageIndicatorRoot = BuildStageIndicator(canvasRoot);
             skillTreeCanvasRoot = BuildSkillTreeCanvas();
             miningCursor = CreateMiningCursor(canvasRoot);
             miningAttackImage = CreateMiningAttackView(canvasRoot);
@@ -340,6 +410,31 @@ namespace GameKamiStreaming
             label.Initialize();
             label.SetText("0:30");
             return label;
+        }
+
+        RectTransform BuildStageIndicator(RectTransform parent)
+        {
+            var root = CreateRect("Stage Indicator", parent, new Vector2(0f, 0f), new Vector2(0f, 0f), new Vector2(0f, 0f), new Vector2(32f, 122f), new Vector2(430f, 128f));
+            var image = root.gameObject.AddComponent<Image>();
+            image.sprite = LoadSprite(StageIndicatorSpriteId);
+            image.preserveAspect = true;
+            image.raycastTarget = false;
+
+            var numberRoot = CreateRect("Stage Number", root, new Vector2(0.52f, 0.5f), new Vector2(0.92f, 0.5f), new Vector2(0.5f, 0.5f), Vector2.zero, new Vector2(0f, 80f));
+            numberRoot.localScale = Vector3.one * StageIndicatorNumberScale;
+            var layout = numberRoot.gameObject.AddComponent<HorizontalLayoutGroup>();
+            layout.childAlignment = TextAnchor.MiddleCenter;
+            layout.childControlWidth = false;
+            layout.childControlHeight = false;
+            layout.childForceExpandWidth = false;
+            layout.childForceExpandHeight = false;
+            layout.spacing = -6f;
+
+            stageNumberLabel = numberRoot.gameObject.AddComponent<PixelNumberLabel>();
+            stageNumberLabel.Initialize();
+            RefreshStageNumberLabel();
+            root.SetAsLastSibling();
+            return root;
         }
 
         RectTransform BuildSkillTreeCanvas()
@@ -365,6 +460,9 @@ namespace GameKamiStreaming
             panelImage.color = new Color(0.12f, 0.13f, 0.16f, 0.92f);
             panelImage.raycastTarget = false;
 
+            BuildSkillTreeResourceWallet(root);
+            BuildSkillTreeTooltip(root);
+            BuildTestSkillTreeButton(skillTreeContentRoot);
             startNextStageButton = BuildNextStageButton(root);
             root.gameObject.SetActive(false);
             return root;
@@ -420,6 +518,96 @@ namespace GameKamiStreaming
             binding.Configure(resource.resourceId, number);
             resourceLabels[resource.resourceId] = number;
             resourceAmounts[resource.resourceId] = 0;
+        }
+
+        RectTransform BuildSkillTreeResourceWallet(RectTransform parent)
+        {
+            var wallet = CreateRect("Skill Tree Resource Wallet", parent, new Vector2(0f, 1f), new Vector2(0f, 1f), new Vector2(0f, 1f), new Vector2(36f, -36f), new Vector2(292f, 520f));
+            var bg = wallet.gameObject.AddComponent<Image>();
+            bg.color = new Color(0f, 0f, 0f, 0.42f);
+            bg.raycastTarget = false;
+
+            var layout = wallet.gameObject.AddComponent<VerticalLayoutGroup>();
+            layout.padding = new RectOffset(12, 12, 12, 12);
+            layout.spacing = 8f;
+            layout.childControlWidth = false;
+            layout.childControlHeight = false;
+            layout.childForceExpandWidth = false;
+            layout.childForceExpandHeight = false;
+
+            foreach (var resource in database.Resources)
+            {
+                BuildSkillTreeResourceCounter(wallet, resource);
+            }
+
+            RegisterSkillTreeResourceLabels(wallet);
+            return wallet;
+        }
+
+        void BuildSkillTreeResourceCounter(RectTransform parent, ResourceRow resource)
+        {
+            var row = CreateRect("Skill Tree Resource " + resource.resourceId, parent, new Vector2(0f, 1f), new Vector2(0f, 1f), new Vector2(0f, 1f), Vector2.zero, new Vector2(268f, 72f));
+            var bg = row.gameObject.AddComponent<Image>();
+            bg.color = new Color(0f, 0f, 0f, 0.24f);
+            bg.raycastTarget = false;
+
+            var icon = AddAnchoredImage("Icon", LoadSprite(resource.imageId), row, new Vector2(0f, 0.5f), new Vector2(0f, 0.5f), new Vector2(0f, 0.5f), new Vector2(36f, 0f), new Vector2(54f, 54f));
+            icon.preserveAspect = true;
+
+            var labelRoot = CreateRect("Number", row, new Vector2(0f, 0.5f), new Vector2(1f, 0.5f), new Vector2(0f, 0.5f), new Vector2(86f, 0f), new Vector2(-96f, 56f));
+            var layout = labelRoot.gameObject.AddComponent<HorizontalLayoutGroup>();
+            layout.childControlWidth = false;
+            layout.childControlHeight = false;
+            layout.childForceExpandWidth = false;
+            layout.childForceExpandHeight = false;
+            layout.spacing = -6f;
+
+            var number = labelRoot.gameObject.AddComponent<PixelNumberLabel>();
+            number.Initialize();
+            number.SetValue(GetResourceAmount(resource.resourceId));
+
+            var binding = row.gameObject.AddComponent<ResourceCounterView>();
+            binding.Configure(resource.resourceId, number);
+            skillTreeResourceLabels[resource.resourceId] = number;
+        }
+
+        RectTransform BuildTestSkillTreeButton(RectTransform parent)
+        {
+            var rect = CreateRect("Skill Tree Test Button", parent, new Vector2(0.5f, 0.5f), new Vector2(0.5f, 0.5f), new Vector2(0.5f, 0.5f), Vector2.zero, new Vector2(170f, 170f));
+            var image = rect.gameObject.AddComponent<Image>();
+            image.sprite = LoadSprite(SkillTreeTestButtonSpriteId);
+            image.preserveAspect = true;
+            image.raycastTarget = true;
+
+            var button = rect.gameObject.AddComponent<Button>();
+            button.targetGraphic = image;
+
+            var trigger = rect.gameObject.AddComponent<EventTrigger>();
+            AddPointerEvent(trigger, EventTriggerType.PointerEnter, ShowSkillTreeTooltip);
+            AddPointerEvent(trigger, EventTriggerType.PointerExit, HideSkillTreeTooltip);
+            return rect;
+        }
+
+        RectTransform BuildSkillTreeTooltip(RectTransform parent)
+        {
+            var root = CreateRect("Skill Tree Detail Tooltip", parent, new Vector2(1f, 1f), new Vector2(1f, 1f), new Vector2(1f, 1f), new Vector2(-44f, -150f), new Vector2(780f, 780f));
+            var image = root.gameObject.AddComponent<Image>();
+            image.sprite = LoadSprite(SkillTreeInfoSpriteId);
+            image.preserveAspect = true;
+            image.raycastTarget = false;
+
+            var title = CreateText("Title", root, new Vector2(0.18f, 0.62f), new Vector2(0.82f, 0.76f), "TEST SKILL", 38, FontStyle.Bold);
+            title.alignment = TextAnchor.MiddleLeft;
+
+            var body = CreateText("Description", root, new Vector2(0.18f, 0.36f), new Vector2(0.82f, 0.60f), "강화 설명 데이터 연결 예정", 28, FontStyle.Normal);
+            body.alignment = TextAnchor.UpperLeft;
+
+            var cost = CreateText("Cost", root, new Vector2(0.18f, 0.24f), new Vector2(0.82f, 0.34f), "COST 0", 28, FontStyle.Bold);
+            cost.alignment = TextAnchor.MiddleLeft;
+
+            root.gameObject.SetActive(false);
+            skillTreeTooltipRoot = root;
+            return root;
         }
 
         RectTransform CreateMiningCursor(RectTransform parent)
@@ -788,6 +976,95 @@ namespace GameKamiStreaming
             }
         }
 
+        void EnsureStageIndicator()
+        {
+            if (canvasRoot == null)
+            {
+                return;
+            }
+
+            if (stageIndicatorRoot == null)
+            {
+                stageIndicatorRoot = FindRectInGameCanvas("Stage Indicator");
+            }
+
+            if (stageIndicatorRoot == null)
+            {
+                stageIndicatorRoot = BuildStageIndicator(canvasRoot);
+            }
+
+            stageIndicatorRoot.SetParent(canvasRoot, false);
+            stageIndicatorRoot.anchorMin = new Vector2(0f, 0f);
+            stageIndicatorRoot.anchorMax = new Vector2(0f, 0f);
+            stageIndicatorRoot.pivot = new Vector2(0f, 0f);
+            stageIndicatorRoot.anchoredPosition = new Vector2(32f, 122f);
+            stageIndicatorRoot.sizeDelta = new Vector2(430f, 128f);
+            stageIndicatorRoot.localScale = Vector3.one;
+            stageIndicatorRoot.SetAsLastSibling();
+
+            var image = stageIndicatorRoot.GetComponent<Image>();
+            if (image == null)
+            {
+                image = stageIndicatorRoot.gameObject.AddComponent<Image>();
+            }
+            image.sprite = LoadSprite(StageIndicatorSpriteId);
+            image.preserveAspect = true;
+            image.raycastTarget = false;
+
+            var numberRoot = FindChildRect(stageIndicatorRoot, "Stage Number");
+            if (numberRoot == null)
+            {
+                numberRoot = CreateRect("Stage Number", stageIndicatorRoot, new Vector2(0.52f, 0.5f), new Vector2(0.92f, 0.5f), new Vector2(0.5f, 0.5f), Vector2.zero, new Vector2(0f, 80f));
+            }
+            numberRoot.anchorMin = new Vector2(0.52f, 0.5f);
+            numberRoot.anchorMax = new Vector2(0.92f, 0.5f);
+            numberRoot.pivot = new Vector2(0.5f, 0.5f);
+            numberRoot.anchoredPosition = Vector2.zero;
+            numberRoot.sizeDelta = new Vector2(0f, 80f);
+            numberRoot.localScale = Vector3.one * StageIndicatorNumberScale;
+
+            var layout = numberRoot.GetComponent<HorizontalLayoutGroup>();
+            if (layout == null)
+            {
+                layout = numberRoot.gameObject.AddComponent<HorizontalLayoutGroup>();
+            }
+            layout.childAlignment = TextAnchor.MiddleCenter;
+            layout.childControlWidth = false;
+            layout.childControlHeight = false;
+            layout.childForceExpandWidth = false;
+            layout.childForceExpandHeight = false;
+            layout.spacing = -6f;
+
+            stageNumberLabel = numberRoot.GetComponent<PixelNumberLabel>();
+            if (stageNumberLabel == null)
+            {
+                stageNumberLabel = numberRoot.gameObject.AddComponent<PixelNumberLabel>();
+            }
+            stageNumberLabel.Initialize();
+            RefreshStageNumberLabel();
+        }
+
+        void RefreshStageNumberLabel()
+        {
+            if (stageNumberLabel == null)
+            {
+                return;
+            }
+
+            stageNumberLabel.SetValue(GetCurrentStageNumber());
+        }
+
+        int GetCurrentStageNumber()
+        {
+            var stageOffset = currentStage != null ? currentStage.stageId - StageIdSpriteBase : currentStageIndex;
+            if (stageOffset < 0)
+            {
+                stageOffset = currentStageIndex;
+            }
+
+            return Mathf.Max(1, stageOffset + 1);
+        }
+
         void EnsureSkillTreeCanvas()
         {
             if (skillTreeCanvasRoot != null)
@@ -795,6 +1072,9 @@ namespace GameKamiStreaming
                 EnsureSkillTreeBackdrop();
                 EnsureSkillTreeContentRoot();
                 EnsureStartNextStageButton();
+                EnsureSkillTreeResourceWallet();
+                EnsureSkillTreeTooltip();
+                EnsureTestSkillTreeButton();
                 skillTreeCanvasRoot.gameObject.SetActive(false);
                 return;
             }
@@ -807,6 +1087,9 @@ namespace GameKamiStreaming
                 EnsureSkillTreeBackdrop();
                 EnsureSkillTreeContentRoot();
                 EnsureStartNextStageButton();
+                EnsureSkillTreeResourceWallet();
+                EnsureSkillTreeTooltip();
+                EnsureTestSkillTreeButton();
                 skillTreeCanvasRoot.gameObject.SetActive(false);
                 return;
             }
@@ -815,6 +1098,9 @@ namespace GameKamiStreaming
             EnsureSkillTreeBackdrop();
             EnsureSkillTreeContentRoot();
             EnsureStartNextStageButton();
+            EnsureSkillTreeResourceWallet();
+            EnsureSkillTreeTooltip();
+            EnsureTestSkillTreeButton();
         }
 
         void EnsureSkillTreeBackdrop()
@@ -950,6 +1236,212 @@ namespace GameKamiStreaming
             }
         }
 
+        void EnsureSkillTreeResourceWallet()
+        {
+            if (database == null)
+            {
+                InitializeTables();
+            }
+
+            if (skillTreeCanvasRoot == null || database == null)
+            {
+                return;
+            }
+
+            var wallet = FindChildRect(skillTreeCanvasRoot, "Skill Tree Resource Wallet");
+            if (wallet == null)
+            {
+                wallet = BuildSkillTreeResourceWallet(skillTreeCanvasRoot);
+            }
+
+            wallet.SetParent(skillTreeCanvasRoot, false);
+            wallet.anchorMin = new Vector2(0f, 1f);
+            wallet.anchorMax = new Vector2(0f, 1f);
+            wallet.pivot = new Vector2(0f, 1f);
+            wallet.anchoredPosition = new Vector2(36f, -36f);
+            wallet.sizeDelta = new Vector2(292f, 520f);
+            wallet.SetAsLastSibling();
+
+            var image = wallet.GetComponent<Image>();
+            if (image == null)
+            {
+                image = wallet.gameObject.AddComponent<Image>();
+            }
+            image.color = new Color(0f, 0f, 0f, 0.42f);
+            image.raycastTarget = false;
+
+            var layout = wallet.GetComponent<VerticalLayoutGroup>();
+            if (layout == null)
+            {
+                layout = wallet.gameObject.AddComponent<VerticalLayoutGroup>();
+            }
+            layout.padding = new RectOffset(12, 12, 12, 12);
+            layout.spacing = 8f;
+            layout.childControlWidth = false;
+            layout.childControlHeight = false;
+            layout.childForceExpandWidth = false;
+            layout.childForceExpandHeight = false;
+
+            RegisterSkillTreeResourceLabels(wallet);
+            foreach (var resource in database.Resources)
+            {
+                if (!skillTreeResourceLabels.ContainsKey(resource.resourceId))
+                {
+                    BuildSkillTreeResourceCounter(wallet, resource);
+                }
+            }
+
+            RegisterSkillTreeResourceLabels(wallet);
+            RefreshAllResourceLabels();
+        }
+
+        void EnsureTestSkillTreeButton()
+        {
+            if (skillTreeContentRoot == null)
+            {
+                return;
+            }
+
+            var rect = FindChildRect(skillTreeContentRoot, "Skill Tree Test Button");
+            if (rect == null)
+            {
+                rect = BuildTestSkillTreeButton(skillTreeContentRoot);
+            }
+
+            rect.SetParent(skillTreeContentRoot, false);
+            rect.anchorMin = new Vector2(0.5f, 0.5f);
+            rect.anchorMax = new Vector2(0.5f, 0.5f);
+            rect.pivot = new Vector2(0.5f, 0.5f);
+            rect.anchoredPosition = Vector2.zero;
+            rect.sizeDelta = new Vector2(170f, 170f);
+            rect.localScale = Vector3.one;
+
+            var image = rect.GetComponent<Image>();
+            if (image == null)
+            {
+                image = rect.gameObject.AddComponent<Image>();
+            }
+            image.sprite = LoadSprite(SkillTreeTestButtonSpriteId);
+            image.preserveAspect = true;
+            image.raycastTarget = true;
+
+            var button = rect.GetComponent<Button>();
+            if (button == null)
+            {
+                button = rect.gameObject.AddComponent<Button>();
+            }
+            button.targetGraphic = image;
+
+            var trigger = rect.GetComponent<EventTrigger>();
+            if (trigger == null)
+            {
+                trigger = rect.gameObject.AddComponent<EventTrigger>();
+            }
+            trigger.triggers.Clear();
+            AddPointerEvent(trigger, EventTriggerType.PointerEnter, ShowSkillTreeTooltip);
+            AddPointerEvent(trigger, EventTriggerType.PointerExit, HideSkillTreeTooltip);
+        }
+
+        void EnsureSkillTreeTooltip()
+        {
+            if (skillTreeCanvasRoot == null)
+            {
+                return;
+            }
+
+            skillTreeTooltipRoot = FindChildRect(skillTreeCanvasRoot, "Skill Tree Detail Tooltip");
+            if (skillTreeTooltipRoot == null)
+            {
+                BuildSkillTreeTooltip(skillTreeCanvasRoot);
+                return;
+            }
+
+            skillTreeTooltipRoot.SetParent(skillTreeCanvasRoot, false);
+            skillTreeTooltipRoot.anchorMin = new Vector2(1f, 1f);
+            skillTreeTooltipRoot.anchorMax = new Vector2(1f, 1f);
+            skillTreeTooltipRoot.pivot = new Vector2(1f, 1f);
+            skillTreeTooltipRoot.anchoredPosition = new Vector2(-44f, -150f);
+            skillTreeTooltipRoot.sizeDelta = new Vector2(780f, 780f);
+            skillTreeTooltipRoot.localScale = Vector3.one;
+            skillTreeTooltipRoot.SetAsLastSibling();
+
+            var image = skillTreeTooltipRoot.GetComponent<Image>();
+            if (image == null)
+            {
+                image = skillTreeTooltipRoot.gameObject.AddComponent<Image>();
+            }
+            image.sprite = LoadSprite(SkillTreeInfoSpriteId);
+            image.preserveAspect = true;
+            image.raycastTarget = false;
+            skillTreeTooltipRoot.gameObject.SetActive(false);
+        }
+
+        void ShowSkillTreeTooltip(BaseEventData eventData)
+        {
+            EnsureSkillTreeTooltip();
+            if (skillTreeTooltipRoot != null)
+            {
+                skillTreeTooltipRoot.gameObject.SetActive(true);
+                skillTreeTooltipRoot.SetAsLastSibling();
+            }
+        }
+
+        void HideSkillTreeTooltip(BaseEventData eventData)
+        {
+            if (skillTreeTooltipRoot != null)
+            {
+                skillTreeTooltipRoot.gameObject.SetActive(false);
+            }
+        }
+
+        void RegisterSkillTreeResourceLabels(RectTransform wallet)
+        {
+            skillTreeResourceLabels.Clear();
+            foreach (var counter in wallet.GetComponentsInChildren<ResourceCounterView>(true))
+            {
+                if (counter.NumberLabel == null)
+                {
+                    continue;
+                }
+
+                counter.NumberLabel.Initialize();
+                counter.NumberLabel.SetValue(GetResourceAmount(counter.ResourceId));
+                skillTreeResourceLabels[counter.ResourceId] = counter.NumberLabel;
+            }
+        }
+
+        int GetResourceAmount(int resourceId)
+        {
+            return resourceAmounts.TryGetValue(resourceId, out var amount) ? amount : 0;
+        }
+
+        void RefreshResourceLabels(int resourceId)
+        {
+            var amount = GetResourceAmount(resourceId);
+            if (resourceLabels.TryGetValue(resourceId, out var mainLabel) && mainLabel != null)
+            {
+                mainLabel.SetValue(amount);
+            }
+
+            if (skillTreeResourceLabels.TryGetValue(resourceId, out var skillTreeLabel) && skillTreeLabel != null)
+            {
+                skillTreeLabel.SetValue(amount);
+            }
+        }
+
+        void RefreshAllResourceLabels()
+        {
+            if (database == null)
+            {
+                return;
+            }
+
+            foreach (var resource in database.Resources)
+            {
+                RefreshResourceLabels(resource.resourceId);
+            }
+        }
+
         bool HasPersistentStartNextStageListener(Button button)
         {
             for (var i = 0; i < button.onClick.GetPersistentEventCount(); i++)
@@ -1028,6 +1520,8 @@ namespace GameKamiStreaming
 
             skillTreeOpen = false;
             ShowGameCanvas();
+            ApplyCurrentStageSprite();
+            RefreshStageNumberLabel();
             ResetRoundTimer();
             FillStagePieces();
         }
@@ -1052,7 +1546,7 @@ namespace GameKamiStreaming
                 return;
             }
 
-            if (skillTreeZoom <= 1.001f || IsPointerOverNextStageButton(pointerPosition))
+            if (skillTreeZoom <= 1.001f || IsPointerOverFixedSkillTreeUi(pointerPosition))
             {
                 skillTreeDragging = false;
                 return;
@@ -1128,10 +1622,23 @@ namespace GameKamiStreaming
             skillTreeContentRoot.anchoredPosition = position;
         }
 
-        bool IsPointerOverNextStageButton(Vector2 pointerPosition)
+        bool IsPointerOverFixedSkillTreeUi(Vector2 pointerPosition)
         {
             var rect = startNextStageButton != null ? startNextStageButton.transform as RectTransform : null;
-            return rect != null && RectTransformUtility.RectangleContainsScreenPoint(rect, pointerPosition, uiCamera);
+            if (rect != null && RectTransformUtility.RectangleContainsScreenPoint(rect, pointerPosition, uiCamera))
+            {
+                return true;
+            }
+
+            rect = FindChildRect(skillTreeCanvasRoot, "Skill Tree Resource Wallet");
+            if (rect != null && RectTransformUtility.RectangleContainsScreenPoint(rect, pointerPosition, uiCamera))
+            {
+                return true;
+            }
+
+            return skillTreeTooltipRoot != null &&
+                skillTreeTooltipRoot.gameObject.activeInHierarchy &&
+                RectTransformUtility.RectangleContainsScreenPoint(skillTreeTooltipRoot, pointerPosition, uiCamera);
         }
 
         void ShowGameCanvas()
@@ -1729,6 +2236,27 @@ namespace GameKamiStreaming
             image.sprite = sprite;
             image.raycastTarget = false;
             return image;
+        }
+
+        static Text CreateText(string name, RectTransform parent, Vector2 anchorMin, Vector2 anchorMax, string value, int fontSize, FontStyle fontStyle)
+        {
+            var rect = CreateRect(name, parent, anchorMin, anchorMax, new Vector2(0.5f, 0.5f), Vector2.zero, Vector2.zero);
+            var text = rect.gameObject.AddComponent<Text>();
+            text.text = value;
+            text.font = LoadDefaultFont();
+            text.fontSize = fontSize;
+            text.fontStyle = fontStyle;
+            text.alignment = TextAnchor.MiddleCenter;
+            text.color = new Color(0.2f, 0.08f, 0.3f, 0.95f);
+            text.raycastTarget = false;
+            return text;
+        }
+
+        static void AddPointerEvent(EventTrigger trigger, EventTriggerType eventType, UnityEngine.Events.UnityAction<BaseEventData> callback)
+        {
+            var entry = new EventTrigger.Entry { eventID = eventType };
+            entry.callback.AddListener(callback);
+            trigger.triggers.Add(entry);
         }
 
         static RectTransform CreateRect(string name, RectTransform parent, Vector2 anchorMin, Vector2 anchorMax, Vector2 pivot, Vector2 anchoredPosition, Vector2 sizeDelta)

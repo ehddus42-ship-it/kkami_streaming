@@ -76,6 +76,8 @@ namespace GameKamiStreamingEditor
         [MenuItem("GameKamiStreaming/Ensure Editable Skill Tree Canvas")]
         public static void EnsureEditableSkillTreeCanvasInScene()
         {
+            AssetDatabase.Refresh();
+            ConfigureSkillTreeSpriteImports();
             var scene = EditorSceneManager.OpenScene(ScenePath, OpenSceneMode.Single);
             var game = Object.FindFirstObjectByType<KkamiPrototypeGame>();
             if (game == null)
@@ -203,10 +205,44 @@ namespace GameKamiStreamingEditor
                 importer.textureType = TextureImporterType.Sprite;
                 importer.spriteImportMode = SpriteImportMode.Single;
                 importer.mipmapEnabled = false;
-                importer.filterMode = FilterMode.Point;
+                importer.filterMode = path.Contains("skilltree_") || path.Contains("stage_ui") ? FilterMode.Bilinear : FilterMode.Point;
                 importer.wrapMode = TextureWrapMode.Clamp;
                 importer.SaveAndReimport();
             }
+        }
+
+        static void ConfigureSkillTreeSpriteImports()
+        {
+            ConfigureSpriteImport("Assets/GameKamiStreaming/Resources/GameKamiStreaming/Sprites/skilltree_info.png", FilterMode.Bilinear);
+            ConfigureSpriteImport("Assets/GameKamiStreaming/Resources/GameKamiStreaming/Sprites/skilltree_button_test.png", FilterMode.Bilinear);
+        }
+
+        static void ConfigureSpriteImport(string path, FilterMode filterMode)
+        {
+            var importer = AssetImporter.GetAtPath(path) as TextureImporter;
+            if (importer == null)
+            {
+                return;
+            }
+
+            var changed =
+                importer.textureType != TextureImporterType.Sprite ||
+                importer.spriteImportMode != SpriteImportMode.Single ||
+                importer.mipmapEnabled ||
+                importer.filterMode != filterMode ||
+                importer.wrapMode != TextureWrapMode.Clamp;
+
+            if (!changed)
+            {
+                return;
+            }
+
+            importer.textureType = TextureImporterType.Sprite;
+            importer.spriteImportMode = SpriteImportMode.Single;
+            importer.mipmapEnabled = false;
+            importer.filterMode = filterMode;
+            importer.wrapMode = TextureWrapMode.Clamp;
+            importer.SaveAndReimport();
         }
 
         static void AddSceneToBuildSettings(string scenePath)
