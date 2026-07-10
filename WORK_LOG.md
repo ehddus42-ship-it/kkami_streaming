@@ -205,6 +205,70 @@
   - `Assets/GameKamiStreaming/Resources/GameKamiStreaming/Sprites/skilltree_bg.png`
   - `Assets/Scenes/KkamiPrototype.unity`
 
+## 17. 10스테이지 보스 1차 구조 추가
+
+- `stage.csv`에서 10/20/30/40/50 스테이지에 보스 ID가 이미 들어 있는 것을 확인했다.
+- 우선 10스테이지 보스인 `50001`을 `piece.csv`에 기물 데이터로 추가했다.
+- `50001`은 `resource_id=20006`, `resource_int=1`로 설정해 처치 시 정기구독자 자원 1개를 획득하도록 했다.
+- `boss_1.png`, 이동 GIF 프레임, 사망 GIF 프레임을 `Resources/GameKamiStreaming/Sprites/boss/boss_1` 아래에 추가했다.
+- 보스도 `DestructiblePieceView`를 사용하는 기물로 생성하고, 이동/사망 연출만 `BossPieceView` 컴포넌트에서 담당하도록 구조를 분리했다.
+- 보스는 현재 스테이지의 `boss_id`를 기준으로 1회 스폰된다.
+- 보스는 2초마다 4방향 중 이동 가능한 방향을 선택해 이동하며, 이동할 때 `vfx_boss1_01` 프레임 애니메이션을 재생한다.
+- 보스 이동 목표는 기존 `spawnpoint1`~`spawnpoint4` 스폰 마름모 범위 안에 들어오는 경우에만 허용한다.
+- 보스 체력이 0 이하가 되면 즉시 제거하지 않고 `vfx_boss1_02` 프레임 애니메이션을 재생한 뒤 보상 지급 및 제거를 처리한다.
+- 이후 보스는 `BossDefinitions`에 ID, 크기, 이동/사망 프레임 경로만 추가하는 방식으로 확장할 수 있게 했다.
+- 검증:
+  - `dotnet build kkami_streaming.slnx`
+  - 경고 0개
+  - 오류 0개
+- 관련 파일:
+  - `Assets/GameKamiStreaming/Scripts/Runtime/KkamiPrototypeGame.cs`
+  - `Assets/GameKamiStreaming/Scripts/Runtime/DestructiblePieceView.cs`
+  - `Assets/GameKamiStreaming/Scripts/Runtime/BossPieceView.cs`
+  - `Assets/GameKamiStreaming/Resources/GameKamiStreaming/DataTables/piece.csv`
+  - `Assets/GameKamiStreaming/Resources/GameKamiStreaming/Sprites/boss/boss_1/boss_1.png`
+  - `Assets/GameKamiStreaming/Resources/GameKamiStreaming/Sprites/boss/boss_1/move/frame_000.png` ~ `frame_007.png`
+  - `Assets/GameKamiStreaming/Resources/GameKamiStreaming/Sprites/boss/boss_1/death/frame_000.png` ~ `frame_011.png`
+
+## 18. 보스 표시 순서 보강
+
+- 보스가 일반 기물에 가려지지 않도록 보스 RectTransform을 같은 기물 레이어의 마지막 sibling으로 올리도록 했다.
+- 일반 기물이 새로 스폰된 직후에도 활성 보스를 다시 앞으로 올리도록 했다.
+- 보스 이동 및 사망 애니메이션 재생 중에도 보스가 최상단 표시 순서를 유지하도록 했다.
+- 검증:
+  - `dotnet build kkami_streaming.slnx`
+  - 경고 0개
+  - 오류 0개
+- 관련 파일:
+  - `Assets/GameKamiStreaming/Scripts/Runtime/KkamiPrototypeGame.cs`
+  - `Assets/GameKamiStreaming/Scripts/Runtime/BossPieceView.cs`
+
+## 19. 채굴 UI 표시 순서 보강
+
+- 채굴 범위 커서와 채굴 애니메이션은 캔버스 루트 직속이라 기본적으로 보스보다 앞에 표시되는 구조임을 확인했다.
+- 보스 이동/사망 중 sibling 순서가 계속 바뀌는 상황에서도 가려지지 않도록 채굴 커서와 채굴 애니메이션을 최상단 sibling으로 다시 올리는 보정을 추가했다.
+- 커서 갱신, 채굴 애니메이션 시작, 채굴 애니메이션 위치 갱신 시 `BringMiningVisualsToFront`를 호출하도록 했다.
+- 검증:
+  - `dotnet build kkami_streaming.slnx`
+  - 경고 0개
+  - 오류 0개
+- 관련 파일:
+  - `Assets/GameKamiStreaming/Scripts/Runtime/KkamiPrototypeGame.cs`
+
+## 20. boss_1 이동 값 조정
+
+- 보스 이동 주기를 기존 2초에서 1초로 줄였다.
+- 보스 이동 거리를 기존 190 기준의 1.8배인 342로 늘렸다.
+- 이동 목표는 기존과 동일하게 `spawnpoint1`~`spawnpoint4`가 만드는 스폰 마름모 안에 보스의 네 모서리가 모두 들어오는 경우에만 허용함을 재확인했다.
+- 스폰 범위 밖 후보는 선택하지 않으며, 전체 거리 이동 가능한 4방향 후보가 없으면 범위 안에서 가능한 가장 긴 짧은 이동으로 대체한다.
+- 짧은 이동도 불가능한 경우에는 스폰 마름모 중앙으로 이동하도록 했다.
+- 검증:
+  - `dotnet build kkami_streaming.slnx`
+  - 경고 0개
+  - 오류 0개
+- 관련 파일:
+  - `Assets/GameKamiStreaming/Scripts/Runtime/BossPieceView.cs`
+
 ## 참고
 
 - `Assets/Scenes/KkamiPrototype.unity`는 작업 시작 시점부터 수정된 상태였으며, 위 기능들은 주로 런타임 코드에서 캔버스와 UI를 생성하는 방식으로 구현했다.

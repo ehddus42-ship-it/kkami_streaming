@@ -19,10 +19,11 @@ namespace GameKamiStreaming
         const float PieceHitboxInsetRatio = 0.24f;
         const int CollectParticleCount = 9;
         const float SpawnPieceSizeScale = 0.8f;
-        const int MiningAttackFrameCount = 12;
         const float MiningAttackFrameSeconds = 0.025f;
         const float MiningAttackSize = 512f;
         const float MiningAttackDisplaySize = MiningAttackSize * 0.7f;
+        const int MiningAttackFrameCount = 12;
+        const string MiningAttackSheetPath = "GameKamiStreaming/Sprites/vfx_kkami_01";
         const string MiningAttackFrameRoot = "GameKamiStreaming/Sprites/mining_attack/frame_";
         const float KkamiAppearIntervalSeconds = 5f;
         const float SkillTreeContentSize = 4200f;
@@ -32,11 +33,14 @@ namespace GameKamiStreaming
         const string SkillTreeBackgroundSpriteId = "skilltree_bg";
         const string SkillTreeInfoSpriteId = "skilltree_info";
         const string SkillTreeTestButtonSpriteId = "skilltree_button_test";
+        const string TemporaryStageJumpButtonGroupName = "Temporary Stage Jump Buttons";
         const int StageSpriteGroupSize = 10;
         const int StageSpriteGroupCount = 5;
         const int StageIdSpriteBase = 30001;
+        static readonly int[] TemporaryStageJumpNumbers = { 9, 19, 29, 39, 49 };
         const float StageIndicatorNumberScale = 1.45f;
         const string StageIndicatorSpriteId = "stage_ui";
+        const string BossFrameFormat = "000";
         static readonly string[] KkamiAppearSpriteIds =
         {
             "kkami_appear/love",
@@ -46,10 +50,64 @@ namespace GameKamiStreaming
             "kkami_appear/shocked",
             "kkami_appear/sad"
         };
+        static readonly Dictionary<int, BossDefinition> BossDefinitions = new Dictionary<int, BossDefinition>
+        {
+            {
+                50001,
+                new BossDefinition
+                {
+                    pieceId = 50001,
+                    size = 260f,
+                    moveInterval = 1f,
+                    moveStepDistance = 190f * 1.8f,
+                    moveDurations = new[] { 0.34f },
+                    moveAnimation = new AnimationSource
+                    {
+                        sheetPath = "GameKamiStreaming/Sprites/vfx_boss1_01",
+                        legacyFrameRoot = "GameKamiStreaming/Sprites/boss/boss_1/move/frame_",
+                        frameCount = 8
+                    },
+                    deathAnimation = new AnimationSource
+                    {
+                        sheetPath = "GameKamiStreaming/Sprites/vfx_boss1_02",
+                        legacyFrameRoot = "GameKamiStreaming/Sprites/boss/boss_1/death/frame_",
+                        frameCount = 12
+                    }
+                }
+            },
+            {
+                50002,
+                new BossDefinition
+                {
+                    pieceId = 50002,
+                    size = 260f * 1.2f,
+                    moveInterval = 1f,
+                    moveStepDistance = 190f * 1.8f,
+                    moveDurations = new[] { 0.45f, 0.32f, 0.22f, 0.14f },
+                    preserveAspect = false,
+                    fallbackImageId = "boss/boss_1/boss_1",
+                    moveAnimation = new AnimationSource
+                    {
+                        sheetPath = "GameKamiStreaming/Sprites/vfx_boss2_01",
+                        legacyFrameRoot = "GameKamiStreaming/Sprites/boss/boss_2/move/frame_",
+                        fallbackLegacyFrameRoot = "GameKamiStreaming/Sprites/boss/boss_1/move/frame_",
+                        frameCount = 12
+                    },
+                    deathAnimation = new AnimationSource
+                    {
+                        sheetPath = "GameKamiStreaming/Sprites/vfx_boss2_02",
+                        legacyFrameRoot = "GameKamiStreaming/Sprites/boss/boss_2/death/frame_",
+                        fallbackLegacyFrameRoot = "GameKamiStreaming/Sprites/boss/boss_1/death/frame_",
+                        frameCount = 12
+                    }
+                }
+            }
+        };
 
         readonly Dictionary<int, int> resourceAmounts = new Dictionary<int, int>();
         readonly Dictionary<int, PixelNumberLabel> resourceLabels = new Dictionary<int, PixelNumberLabel>();
         readonly Dictionary<int, PixelNumberLabel> skillTreeResourceLabels = new Dictionary<int, PixelNumberLabel>();
+        readonly Dictionary<string, List<Sprite>> bossAnimationFrames = new Dictionary<string, List<Sprite>>();
         readonly List<DestructiblePieceView> activePieces = new List<DestructiblePieceView>();
         readonly List<Sprite> miningAttackFrames = new List<Sprite>();
         readonly List<Sprite> kkamiAppearSprites = new List<Sprite>();
@@ -89,6 +147,28 @@ namespace GameKamiStreaming
         bool miningAttackPlaying;
         bool kkamiAppearChanging;
         bool skillTreeDragging;
+        bool currentStageBossSpawned;
+
+        sealed class BossDefinition
+        {
+            public int pieceId;
+            public float size;
+            public float moveInterval;
+            public float moveStepDistance;
+            public float[] moveDurations;
+            public bool preserveAspect = true;
+            public string fallbackImageId;
+            public AnimationSource moveAnimation;
+            public AnimationSource deathAnimation;
+        }
+
+        sealed class AnimationSource
+        {
+            public string sheetPath;
+            public string legacyFrameRoot;
+            public string fallbackLegacyFrameRoot;
+            public int frameCount;
+        }
 
         void Awake()
         {
@@ -463,6 +543,7 @@ namespace GameKamiStreaming
             BuildSkillTreeResourceWallet(root);
             BuildSkillTreeTooltip(root);
             BuildTestSkillTreeButton(skillTreeContentRoot);
+            BuildTemporaryStageJumpButtons(skillTreeContentRoot);
             startNextStageButton = BuildNextStageButton(root);
             root.gameObject.SetActive(false);
             return root;
@@ -585,6 +666,25 @@ namespace GameKamiStreaming
             var trigger = rect.gameObject.AddComponent<EventTrigger>();
             AddPointerEvent(trigger, EventTriggerType.PointerEnter, ShowSkillTreeTooltip);
             AddPointerEvent(trigger, EventTriggerType.PointerExit, HideSkillTreeTooltip);
+            return rect;
+        }
+
+        RectTransform BuildTemporaryStageJumpButtons(RectTransform parent)
+        {
+            var group = CreateRect(TemporaryStageJumpButtonGroupName, parent, new Vector2(0.5f, 0.5f), new Vector2(0.5f, 0.5f), new Vector2(0.5f, 0.5f), new Vector2(0f, -280f), new Vector2(1200f, 190f));
+            for (var i = 0; i < TemporaryStageJumpNumbers.Length; i++)
+            {
+                BuildTemporaryStageJumpButton(group, TemporaryStageJumpNumbers[i], i);
+            }
+
+            return group;
+        }
+
+        RectTransform BuildTemporaryStageJumpButton(RectTransform parent, int stageNumber, int index)
+        {
+            var x = (index - (TemporaryStageJumpNumbers.Length - 1) * 0.5f) * 210f;
+            var rect = CreateRect("Temporary Stage Jump " + stageNumber, parent, new Vector2(0.5f, 0.5f), new Vector2(0.5f, 0.5f), new Vector2(0.5f, 0.5f), new Vector2(x, 0f), new Vector2(170f, 170f));
+            ConfigureTemporaryStageJumpButton(rect, stageNumber);
             return rect;
         }
 
@@ -749,23 +849,12 @@ namespace GameKamiStreaming
                 return;
             }
 
-            for (var i = 0; i < MiningAttackFrameCount; i++)
+            miningAttackFrames.AddRange(LoadAnimationFrames(new AnimationSource
             {
-                var framePath = MiningAttackFrameRoot + i.ToString("000");
-                var texture = Resources.Load<Texture2D>(framePath);
-                if (texture == null)
-                {
-                    var sprite = Resources.Load<Sprite>(framePath);
-                    if (sprite != null)
-                    {
-                        miningAttackFrames.Add(sprite);
-                    }
-                }
-                else
-                {
-                    miningAttackFrames.Add(Sprite.Create(texture, new Rect(0f, 0f, texture.width, texture.height), new Vector2(1f / 3f, 0f), 100f));
-                }
-            }
+                sheetPath = MiningAttackSheetPath,
+                legacyFrameRoot = MiningAttackFrameRoot,
+                frameCount = MiningAttackFrameCount
+            }, new Vector2(1f / 3f, 0f)));
         }
 
         void EnsureKkamiAppearView()
@@ -1075,6 +1164,7 @@ namespace GameKamiStreaming
                 EnsureSkillTreeResourceWallet();
                 EnsureSkillTreeTooltip();
                 EnsureTestSkillTreeButton();
+                EnsureTemporaryStageJumpButtons();
                 skillTreeCanvasRoot.gameObject.SetActive(false);
                 return;
             }
@@ -1090,6 +1180,7 @@ namespace GameKamiStreaming
                 EnsureSkillTreeResourceWallet();
                 EnsureSkillTreeTooltip();
                 EnsureTestSkillTreeButton();
+                EnsureTemporaryStageJumpButtons();
                 skillTreeCanvasRoot.gameObject.SetActive(false);
                 return;
             }
@@ -1101,6 +1192,7 @@ namespace GameKamiStreaming
             EnsureSkillTreeResourceWallet();
             EnsureSkillTreeTooltip();
             EnsureTestSkillTreeButton();
+            EnsureTemporaryStageJumpButtons();
         }
 
         void EnsureSkillTreeBackdrop()
@@ -1342,6 +1434,99 @@ namespace GameKamiStreaming
             AddPointerEvent(trigger, EventTriggerType.PointerExit, HideSkillTreeTooltip);
         }
 
+        void EnsureTemporaryStageJumpButtons()
+        {
+            if (skillTreeContentRoot == null)
+            {
+                return;
+            }
+
+            var group = FindChildRect(skillTreeContentRoot, TemporaryStageJumpButtonGroupName);
+            if (group == null)
+            {
+                group = BuildTemporaryStageJumpButtons(skillTreeContentRoot);
+            }
+
+            group.SetParent(skillTreeContentRoot, false);
+            group.anchorMin = new Vector2(0.5f, 0.5f);
+            group.anchorMax = new Vector2(0.5f, 0.5f);
+            group.pivot = new Vector2(0.5f, 0.5f);
+            group.anchoredPosition = new Vector2(0f, -280f);
+            group.sizeDelta = new Vector2(1200f, 190f);
+            group.localScale = Vector3.one;
+
+            for (var i = 0; i < TemporaryStageJumpNumbers.Length; i++)
+            {
+                var stageNumber = TemporaryStageJumpNumbers[i];
+                var rect = FindChildRect(group, "Temporary Stage Jump " + stageNumber);
+                if (rect == null)
+                {
+                    rect = BuildTemporaryStageJumpButton(group, stageNumber, i);
+                }
+
+                var x = (i - (TemporaryStageJumpNumbers.Length - 1) * 0.5f) * 210f;
+                rect.SetParent(group, false);
+                rect.anchorMin = new Vector2(0.5f, 0.5f);
+                rect.anchorMax = new Vector2(0.5f, 0.5f);
+                rect.pivot = new Vector2(0.5f, 0.5f);
+                rect.anchoredPosition = new Vector2(x, 0f);
+                rect.sizeDelta = new Vector2(170f, 170f);
+                rect.localScale = Vector3.one;
+                ConfigureTemporaryStageJumpButton(rect, stageNumber);
+            }
+        }
+
+        void ConfigureTemporaryStageJumpButton(RectTransform rect, int stageNumber)
+        {
+            var image = rect.GetComponent<Image>();
+            if (image == null)
+            {
+                image = rect.gameObject.AddComponent<Image>();
+            }
+
+            image.sprite = LoadSprite(SkillTreeTestButtonSpriteId);
+            image.preserveAspect = true;
+            image.raycastTarget = true;
+
+            var button = rect.GetComponent<Button>();
+            if (button == null)
+            {
+                button = rect.gameObject.AddComponent<Button>();
+            }
+
+            button.targetGraphic = image;
+            button.onClick.RemoveAllListeners();
+            button.onClick.AddListener(() => StartStageFromSkillTree(stageNumber));
+
+            var label = FindChildRect(rect, "Label");
+            if (label == null)
+            {
+                label = CreateRect("Label", rect, Vector2.zero, Vector2.one, new Vector2(0.5f, 0.5f), Vector2.zero, Vector2.zero);
+            }
+
+            label.SetParent(rect, false);
+            label.anchorMin = Vector2.zero;
+            label.anchorMax = Vector2.one;
+            label.pivot = new Vector2(0.5f, 0.5f);
+            label.anchoredPosition = Vector2.zero;
+            label.sizeDelta = Vector2.zero;
+            label.localScale = Vector3.one;
+
+            var text = label.GetComponent<Text>();
+            if (text == null)
+            {
+                text = label.gameObject.AddComponent<Text>();
+            }
+
+            text.text = stageNumber.ToString();
+            text.font = LoadDefaultFont();
+            text.fontSize = 48;
+            text.fontStyle = FontStyle.Bold;
+            text.alignment = TextAnchor.MiddleCenter;
+            text.color = Color.white;
+            text.raycastTarget = false;
+        }
+
         void EnsureSkillTreeTooltip()
         {
             if (skillTreeCanvasRoot == null)
@@ -1457,6 +1642,7 @@ namespace GameKamiStreaming
 
         void ResetRoundTimer()
         {
+            currentStageBossSpawned = false;
             roundRemainingSeconds = currentStage != null ? Mathf.Max(1, currentStage.timeLimitSeconds) : 0f;
             displayedRoundSecond = -1;
             UpdateRoundTimerLabel(true);
@@ -1518,12 +1704,52 @@ namespace GameKamiStreaming
                 currentStage = database.Stages[currentStageIndex];
             }
 
+            StartSelectedStageFromSkillTree();
+        }
+
+        void StartStageFromSkillTree(int stageNumber)
+        {
+            if (database == null)
+            {
+                InitializeTables();
+            }
+
+            if (database != null && database.Stages.Count > 0)
+            {
+                currentStageIndex = FindStageIndexByNumber(stageNumber);
+                currentStage = database.Stages[currentStageIndex];
+            }
+
+            StartSelectedStageFromSkillTree();
+        }
+
+        void StartSelectedStageFromSkillTree()
+        {
             skillTreeOpen = false;
             ShowGameCanvas();
             ApplyCurrentStageSprite();
             RefreshStageNumberLabel();
             ResetRoundTimer();
             FillStagePieces();
+        }
+
+        int FindStageIndexByNumber(int stageNumber)
+        {
+            if (database == null || database.Stages.Count == 0)
+            {
+                return 0;
+            }
+
+            var targetStageId = StageIdSpriteBase + Mathf.Max(1, stageNumber) - 1;
+            for (var i = 0; i < database.Stages.Count; i++)
+            {
+                if (database.Stages[i].stageId == targetStageId)
+                {
+                    return i;
+                }
+            }
+
+            return Mathf.Clamp(stageNumber - 1, 0, database.Stages.Count - 1);
         }
 
         void UpdateSkillTreeNavigation()
@@ -1670,6 +1896,7 @@ namespace GameKamiStreaming
         void FillStagePieces()
         {
             CleanupDestroyedPieceRefs();
+            SpawnBossForCurrentStageIfNeeded();
             while (activePieces.Count < TargetPieceCount)
             {
                 SpawnPieceAtRandomPosition();
@@ -1709,6 +1936,196 @@ namespace GameKamiStreaming
             var view = pieceRoot.gameObject.AddComponent<DestructiblePieceView>();
             view.Initialize(this, piece, LoadSprite(piece.imageId));
             activePieces.Add(view);
+            BringActiveBossesToFront();
+        }
+
+        void SpawnBossForCurrentStageIfNeeded()
+        {
+            if (currentStage == null || currentStage.bossId <= 0 || currentStageBossSpawned)
+            {
+                return;
+            }
+
+            var bossPiece = database.GetPiece(currentStage.bossId);
+            if (bossPiece == null)
+            {
+                return;
+            }
+
+            currentStageBossSpawned = true;
+            BossDefinitions.TryGetValue(bossPiece.pieceId, out var definition);
+            var size = definition != null ? definition.size : 260f;
+            var half = size * 0.5f;
+            EnsurePieceDisplayLayer();
+            var displayPosition = PickSpawnPosition(half);
+            var bossRoot = CreateRect(bossPiece.pieceName, pieceDisplayLayer, new Vector2(0.5f, 0.5f), new Vector2(0.5f, 0.5f), new Vector2(0.5f, 0.5f), displayPosition, new Vector2(size, size));
+            bossRoot.localRotation = Quaternion.identity;
+            bossRoot.localScale = Vector3.one;
+
+            var image = bossRoot.gameObject.AddComponent<Image>();
+            image.raycastTarget = false;
+            image.preserveAspect = true;
+            var moveFrames = definition != null ? LoadAnimationFrames(definition.moveAnimation, new Vector2(0.5f, 0.5f)) : new List<Sprite>();
+            var deathFrames = definition != null ? LoadAnimationFrames(definition.deathAnimation, new Vector2(0.5f, 0.5f)) : new List<Sprite>();
+            var idleSprite = LoadSprite(bossPiece.imageId);
+            if (idleSprite == null && moveFrames.Count > 0)
+            {
+                idleSprite = moveFrames[0];
+            }
+            if (idleSprite == null && definition != null && !string.IsNullOrWhiteSpace(definition.fallbackImageId))
+            {
+                idleSprite = LoadSprite(definition.fallbackImageId);
+            }
+
+            var view = bossRoot.gameObject.AddComponent<DestructiblePieceView>();
+            view.Initialize(this, bossPiece, idleSprite);
+            image.preserveAspect = definition == null || definition.preserveAspect;
+            activePieces.Add(view);
+            bossRoot.SetAsLastSibling();
+
+            if (definition != null)
+            {
+                var bossView = bossRoot.gameObject.AddComponent<BossPieceView>();
+                bossView.Initialize(
+                    this,
+                    view,
+                    image,
+                    idleSprite,
+                    moveFrames,
+                    deathFrames,
+                    definition.moveInterval,
+                    definition.moveStepDistance,
+                    definition.moveDurations);
+            }
+        }
+
+        void BringActiveBossesToFront()
+        {
+            for (var i = 0; i < activePieces.Count; i++)
+            {
+                var piece = activePieces[i];
+                if (piece == null || piece.IsDestroyed || piece.GetComponent<BossPieceView>() == null)
+                {
+                    continue;
+                }
+
+                piece.RectTransform.SetAsLastSibling();
+            }
+        }
+
+        List<Sprite> LoadAnimationFrames(AnimationSource source, Vector2 pivot)
+        {
+            if (source == null)
+            {
+                return new List<Sprite>();
+            }
+
+            var cacheKey = source.sheetPath + "|" + source.legacyFrameRoot + "|" + source.fallbackLegacyFrameRoot + "|" + source.frameCount + "|" + pivot;
+            if (bossAnimationFrames.TryGetValue(cacheKey, out var cachedFrames))
+            {
+                return cachedFrames;
+            }
+
+            var frames = new List<Sprite>();
+            if (!string.IsNullOrWhiteSpace(source.sheetPath))
+            {
+                var slicedSprites = Resources.LoadAll<Sprite>(source.sheetPath);
+                if (slicedSprites != null && slicedSprites.Length > 1)
+                {
+                    var sortedSprites = new List<Sprite>(slicedSprites);
+                    sortedSprites.Sort((a, b) => string.CompareOrdinal(a.name, b.name));
+                    frames.AddRange(sortedSprites);
+                }
+
+                if (frames.Count == 0)
+                {
+                    var texture = Resources.Load<Texture2D>(source.sheetPath);
+                    if (texture != null)
+                    {
+                        AddFramesFromSpriteSheet(frames, texture, source.frameCount, pivot);
+                    }
+                }
+
+                if (frames.Count == 0)
+                {
+                    var sprite = Resources.Load<Sprite>(source.sheetPath);
+                    if (sprite != null)
+                    {
+                        frames.Add(sprite);
+                    }
+                }
+            }
+
+            if (frames.Count == 0 && !string.IsNullOrWhiteSpace(source.legacyFrameRoot))
+            {
+                AddLegacyAnimationFrames(frames, source.legacyFrameRoot, source.frameCount, pivot);
+            }
+
+            if (frames.Count == 0 && !string.IsNullOrWhiteSpace(source.fallbackLegacyFrameRoot))
+            {
+                AddLegacyAnimationFrames(frames, source.fallbackLegacyFrameRoot, source.frameCount, pivot);
+            }
+
+            bossAnimationFrames[cacheKey] = frames;
+            return frames;
+        }
+
+        static void AddLegacyAnimationFrames(List<Sprite> frames, string frameRoot, int frameCount, Vector2 pivot)
+        {
+            for (var i = 0; i < frameCount; i++)
+            {
+                var path = frameRoot + i.ToString(BossFrameFormat);
+                var texture = Resources.Load<Texture2D>(path);
+                if (texture != null)
+                {
+                    frames.Add(Sprite.Create(texture, new Rect(0f, 0f, texture.width, texture.height), pivot, 100f));
+                    continue;
+                }
+
+                var sprite = Resources.Load<Sprite>(path);
+                if (sprite != null)
+                {
+                    frames.Add(sprite);
+                }
+            }
+        }
+
+        static void AddFramesFromSpriteSheet(List<Sprite> frames, Texture2D texture, int frameCount, Vector2 pivot)
+        {
+            if (texture == null)
+            {
+                return;
+            }
+
+            frameCount = Mathf.Max(1, frameCount);
+            var columns = frameCount;
+            var rows = 1;
+            if (texture.width < texture.height * frameCount * 0.45f)
+            {
+                columns = Mathf.Max(1, Mathf.RoundToInt(Mathf.Sqrt(frameCount * texture.width / (float)Mathf.Max(1, texture.height))));
+                columns = Mathf.Clamp(columns, 1, frameCount);
+                while (columns > 1 && frameCount % columns != 0)
+                {
+                    columns--;
+                }
+
+                rows = Mathf.Max(1, Mathf.CeilToInt(frameCount / (float)columns));
+            }
+
+            var frameWidth = texture.width / (float)columns;
+            var frameHeight = texture.height / (float)rows;
+
+            for (var i = 0; i < frameCount; i++)
+            {
+                var column = i % columns;
+                var rowFromTop = i / columns;
+                var y = texture.height - (rowFromTop + 1) * frameHeight;
+                var rect = new Rect(column * frameWidth, y, frameWidth, frameHeight);
+                if (rect.width > 0f && rect.height > 0f)
+                {
+                    frames.Add(Sprite.Create(texture, rect, pivot, 100f));
+                }
+            }
         }
 
         Vector2 PickSpawnPosition(float halfSize)
@@ -1737,6 +2154,141 @@ namespace GameKamiStreaming
             var anchoredPosition = new Vector2(Random.Range(rect.xMin + halfSize, rect.xMax - halfSize), Random.Range(rect.yMin + halfSize, rect.yMax - halfSize));
             var worldPosition = pieceLayer.TransformPoint(anchoredPosition);
             return (Vector2)pieceDisplayLayer.InverseTransformPoint(worldPosition);
+        }
+
+        public bool TryGetBossMovePath(RectTransform bossTransform, float stepDistance, Vector2 direction, List<Vector2> path, out Vector2 outgoingDirection)
+        {
+            if (path != null)
+            {
+                path.Clear();
+            }
+
+            outgoingDirection = direction.sqrMagnitude > 0.001f ? direction.normalized : Vector2.right;
+            if (bossTransform == null || !TryGetSpawnPolygon(out var polygon))
+            {
+                return false;
+            }
+
+            var halfSize = Mathf.Max(bossTransform.rect.width, bossTransform.rect.height) * 0.5f;
+            var currentPosition = bossTransform.anchoredPosition;
+            var center = GetCentroid(polygon);
+            if (!IsPieceInsidePolygon(currentPosition, halfSize, polygon))
+            {
+                if (!IsPieceInsidePolygon(center, halfSize, polygon))
+                {
+                    return false;
+                }
+
+                currentPosition = center;
+                path?.Add(currentPosition);
+            }
+
+            var remainingDistance = Mathf.Max(0f, stepDistance);
+            const int MaxBounceCount = 4;
+            for (var bounce = 0; bounce <= MaxBounceCount && remainingDistance > 1f; bounce++)
+            {
+                var candidate = currentPosition + outgoingDirection * remainingDistance;
+                if (IsPieceInsidePolygon(candidate, halfSize, polygon))
+                {
+                    path?.Add(candidate);
+                    return path == null || path.Count > 0;
+                }
+
+                var travelDistance = FindMaxInsideTravelDistance(currentPosition, outgoingDirection, remainingDistance, halfSize, polygon);
+                if (travelDistance > 0.5f)
+                {
+                    currentPosition += outgoingDirection * travelDistance;
+                    path?.Add(currentPosition);
+                    remainingDistance -= travelDistance;
+                }
+                else
+                {
+                    remainingDistance = Mathf.Max(0f, remainingDistance - 1f);
+                }
+
+                var normal = FindBossBounceNormal(currentPosition + outgoingDirection * 2f, halfSize, polygon);
+                outgoingDirection = Vector2.Reflect(outgoingDirection, normal).normalized;
+                if (outgoingDirection.sqrMagnitude <= 0.001f || !IsPieceInsidePolygon(currentPosition + outgoingDirection * 2f, halfSize, polygon))
+                {
+                    outgoingDirection = (center - currentPosition).sqrMagnitude > 0.001f ? (center - currentPosition).normalized : Vector2.right;
+                }
+            }
+
+            if (path != null && path.Count > 0)
+            {
+                return true;
+            }
+
+            if (IsPieceInsidePolygon(center, halfSize, polygon))
+            {
+                path?.Add(center);
+                outgoingDirection = (center - currentPosition).sqrMagnitude > 0.001f ? (center - currentPosition).normalized : outgoingDirection;
+                return true;
+            }
+
+            return false;
+        }
+
+        static float FindMaxInsideTravelDistance(Vector2 origin, Vector2 direction, float maxDistance, float halfSize, Vector2[] polygon)
+        {
+            var low = 0f;
+            var high = maxDistance;
+            for (var i = 0; i < 12; i++)
+            {
+                var mid = (low + high) * 0.5f;
+                var candidate = origin + direction * mid;
+                if (IsPieceInsidePolygon(candidate, halfSize, polygon))
+                {
+                    low = mid;
+                }
+                else
+                {
+                    high = mid;
+                }
+            }
+
+            return low;
+        }
+
+        static Vector2 FindBossBounceNormal(Vector2 outsideCenter, float halfSize, Vector2[] polygon)
+        {
+            var corners = new[]
+            {
+                outsideCenter + new Vector2(-halfSize, -halfSize),
+                outsideCenter + new Vector2(-halfSize, halfSize),
+                outsideCenter + new Vector2(halfSize, halfSize),
+                outsideCenter + new Vector2(halfSize, -halfSize)
+            };
+            var signedArea = GetSignedArea(polygon);
+            var bestNormal = Vector2.up;
+            var smallestDistance = float.MaxValue;
+
+            for (var i = 0; i < polygon.Length; i++)
+            {
+                var a = polygon[i];
+                var b = polygon[(i + 1) % polygon.Length];
+                var edge = b - a;
+                if (edge.sqrMagnitude <= 0.001f)
+                {
+                    continue;
+                }
+
+                var inwardNormal = signedArea >= 0f
+                    ? new Vector2(-edge.y, edge.x).normalized
+                    : new Vector2(edge.y, -edge.x).normalized;
+
+                for (var j = 0; j < corners.Length; j++)
+                {
+                    var distance = Vector2.Dot(corners[j] - a, inwardNormal);
+                    if (distance < smallestDistance)
+                    {
+                        smallestDistance = distance;
+                        bestNormal = inwardNormal;
+                    }
+                }
+            }
+
+            return bestNormal;
         }
 
         bool TryGetSpawnPolygon(out Vector2[] points)
@@ -1950,6 +2502,20 @@ namespace GameKamiStreaming
             var insideStage = IsPointerInsideMiningArea(pointerPosition);
             miningCursor.gameObject.SetActive(insideStage);
             miningCursor.anchoredPosition = canvasPoint;
+            BringMiningVisualsToFront();
+        }
+
+        void BringMiningVisualsToFront()
+        {
+            if (miningCursor != null)
+            {
+                miningCursor.SetAsLastSibling();
+            }
+
+            if (miningAttackImage != null)
+            {
+                miningAttackImage.rectTransform.SetAsLastSibling();
+            }
         }
 
         bool IsPointerInsideMiningArea(Vector2 pointerPosition)
@@ -1997,7 +2563,7 @@ namespace GameKamiStreaming
             }
 
             miningAttackImage.gameObject.SetActive(true);
-            miningAttackImage.rectTransform.SetAsLastSibling();
+            BringMiningVisualsToFront();
 
             for (var frameIndex = 0; frameIndex < miningAttackFrames.Count; frameIndex++)
             {
@@ -2044,6 +2610,7 @@ namespace GameKamiStreaming
             }
 
             miningAttackImage.rectTransform.anchoredPosition = canvasPoint;
+            BringMiningVisualsToFront();
             return true;
         }
 
@@ -2338,7 +2905,22 @@ namespace GameKamiStreaming
 
         static Sprite LoadSprite(string id)
         {
-            return string.IsNullOrWhiteSpace(id) ? null : UnityEngine.Resources.Load<Sprite>(SpriteRoot + id);
+            if (string.IsNullOrWhiteSpace(id))
+            {
+                return null;
+            }
+
+            var path = SpriteRoot + id;
+            var sprite = UnityEngine.Resources.Load<Sprite>(path);
+            if (sprite != null)
+            {
+                return sprite;
+            }
+
+            var texture = UnityEngine.Resources.Load<Texture2D>(path);
+            return texture != null
+                ? Sprite.Create(texture, new Rect(0f, 0f, texture.width, texture.height), new Vector2(0.5f, 0.5f), 100f)
+                : null;
         }
 
         static Font LoadDefaultFont()

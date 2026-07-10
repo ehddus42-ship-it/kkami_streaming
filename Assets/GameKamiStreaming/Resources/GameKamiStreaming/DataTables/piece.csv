@@ -4,3 +4,5 @@ piece_id,piece_name,resource_id,resource_int,hp_int,pieceimg_id,effect_id
 100003,에너지_드링크,20003,6,11,energydrink,
 100004,상자,20004,8,14,box,
 100005,빨간상자,20005,10,18,redbox,
+50001,boss_1,20006,1,40,boss/boss_1/boss_1,
+50002,boss_2,20006,1,40,boss/boss_2/boss_2,

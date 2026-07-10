@@ -9,9 +9,13 @@ namespace GameKamiStreaming
         KkamiPrototypeGame owner;
         PieceRow piece;
         float hp;
+        bool deathHandledExternally;
+        bool defeated;
 
         public bool IsDestroyed => piece == null || hp <= 0f;
+        public PieceRow Piece => piece;
         public RectTransform RectTransform => transform as RectTransform;
+        public event System.Action<DestructiblePieceView> Defeated;
 
         public void Initialize(KkamiPrototypeGame game, PieceRow row, Sprite sprite)
         {
@@ -23,9 +27,14 @@ namespace GameKamiStreaming
             icon.preserveAspect = true;
         }
 
+        public void SetDeathHandledExternally(bool value)
+        {
+            deathHandledExternally = value;
+        }
+
         public void Hit(float damage, bool playFeedback)
         {
-            if (piece == null)
+            if (piece == null || defeated)
             {
                 return;
             }
@@ -38,6 +47,13 @@ namespace GameKamiStreaming
 
             if (hp <= 0f)
             {
+                defeated = true;
+                Defeated?.Invoke(this);
+                if (deathHandledExternally)
+                {
+                    return;
+                }
+
                 owner.CollectPiece(piece, transform as RectTransform);
                 Destroy(gameObject);
             }
