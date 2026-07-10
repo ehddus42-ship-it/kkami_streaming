@@ -12,6 +12,7 @@ namespace GameKamiStreaming
         public readonly List<StageRow> Stages = new List<StageRow>();
         public readonly List<SkillTreeRow> SkillTree = new List<SkillTreeRow>();
         public readonly List<EffectRow> Effects = new List<EffectRow>();
+        public readonly List<ChatRow> Chats = new List<ChatRow>();
 
         readonly Dictionary<int, ResourceRow> resourcesById = new Dictionary<int, ResourceRow>();
         readonly Dictionary<int, PieceRow> piecesById = new Dictionary<int, PieceRow>();
@@ -24,6 +25,7 @@ namespace GameKamiStreaming
             database.LoadPieces();
             database.LoadStages();
             database.LoadSkillTree();
+            database.LoadChats();
             database.LoadEffects();
             return database;
         }
@@ -96,6 +98,7 @@ namespace GameKamiStreaming
                     stageId = Int(row, "stage_id"),
                     bossId = Int(row, "boss_id"),
                     timeLimitSeconds = timeLimitSeconds > 0 ? timeLimitSeconds : 30,
+                    imageId = Str(row, "stageimg_id"),
                     effectId = Str(row, "effect_id")
                 };
 
@@ -125,7 +128,7 @@ namespace GameKamiStreaming
                 {
                     tileId = Int(row, "tile_id"),
                     reinforcedType = Int(row, "reinforced_int"),
-                    upAmount = Int(row, "up_int"),
+                    upAmount = Float(row, "up_int"),
                     useSubscription = Bool(row, "sub_use"),
                     followCost = Int(row, "follow_int"),
                     watcherCost = Int(row, "watcher_int"),
@@ -153,6 +156,26 @@ namespace GameKamiStreaming
                 {
                     Effects.Add(data);
                     effectsById[data.effectId] = data;
+                }
+            }
+        }
+
+        void LoadChats()
+        {
+            foreach (var row in Read("chat").Rows)
+            {
+                var data = new ChatRow
+                {
+                    chatId = Int(row, "chat_id"),
+                    dialogue = Str(row, "chat_dialogue"),
+                    spawnWeight = Float(row, "chat_spawn"),
+                    viewerImageId = Str(row, "viewer_img_id"),
+                    kkamiPortraitImageId = Str(row, "kkami_portrait_img_id")
+                };
+
+                if (data.chatId > 0)
+                {
+                    Chats.Add(data);
                 }
             }
         }
@@ -188,6 +211,11 @@ namespace GameKamiStreaming
         static float Float(string value)
         {
             return float.TryParse(value, out var parsed) ? parsed : 0f;
+        }
+
+        static float Float(Dictionary<string, string> row, string key)
+        {
+            return Float(Str(row, key));
         }
     }
 }

@@ -1,0 +1,27 @@
+﻿이미지 ID,이미지 이름
+img_name_ID,img_name
+string,string
+I10101,img_kkami_01
+I10201,img_manager_01
+I20101,img_keyboard_01
+I20201,img_camera_01
+I20301,img_energydrink_01
+I20401,img_box_01
+I20501,img_redbox_01
+I30101,img_follow_01
+I30201,img_watch_01
+I30301,img_love_01
+I30401,img_donation_01
+I30501,img_reddonation_01
+I30601,img_subscriber_01
+I50101,img_stage1_01
+I50201,img_stage2_01
+I50301,img_stage3_01
+I50401,img_stage4_01
+I50501,img_stage5_01
+I70101,img_angry_01
+I70201,img_confused_01
+I70202,img_love_01
+I70203,img_sad_01
+I70204,img_shocked_01
+I70205,img_superangry_01

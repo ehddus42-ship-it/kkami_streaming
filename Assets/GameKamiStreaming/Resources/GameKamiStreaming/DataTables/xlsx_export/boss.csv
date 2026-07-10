@@ -1,0 +1,8 @@
+﻿보스 ID,보스 이름,보스 체력,보스 자원 종류,보스 자원량,보스 사운드 리소스 ID,보스 기본 이펙트 리소스 ID,보스 사망 이펙트 리소스 ID
+boss_ID,boss_name,boss_hp,boss_currency_ID,boss_currency_amount,sfx_name_ID,vfx_name_ID,vfx_name_ID
+int,string,int,int,int,string,string,string
+30001,boss1,75,20006,1,,vfx_boss1_01,vfx_boss1_02
+30002,boss2,180,20006,3,,vfx_boss2_01,vfx_boss2_02
+30003,boss3,400,20006,5,,vfx_boss3_01,vfx_boss3_02
+30004,boss4,800,20006,8,,vfx_boss4_01,vfx_boss4_02
+30005,boss5,1500,20006,100,,vfx_boss5_01,vfx_boss5_02

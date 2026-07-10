@@ -1,0 +1,65 @@
+﻿,,
+,stage_ID,스테이지 ID
+,,
+,설명,
+,스테이지의 속성을 지닌 5자리 ID,
+,,
+,,
+,boss_ID,보스 ID
+,,
+,설명,
+,"스테이지에 따라 보드에 등장 보스 
+참조 ID (boss Table 참조)",
+,,
+,,
+,,
+,keyboard_spawn,키보드 기물 등장 확률
+,,
+,설명,
+,"stage Table의 C열
+키보드 기물 ID를 참조 하여 (piece Table), 
+해당 기물 등장 확률의 수치",
+,,
+,,
+,,
+,camera_spawn,카메라 기물 등장 확률
+,,
+,설명,
+,"stage Table의 D열
+카메라 기물 ID를 참조 하여 (piece Table), 
+해당 기물 등장 확률의 수치",
+,,
+,,
+,,
+,energydrink_spawn,에너지 드링크 기물 등장 확률
+,,
+,설명,
+,"stage Table의 E열
+에너지 드링크 기물 ID를 참조 하여 (piece Table), 
+해당 기물 등장 확률의 수치",
+,,
+,,
+,,
+,box_spawn,상자 기물 등장 확률
+,,
+,설명,
+,"stage Table의 F열
+상자 기물 ID를 참조 하여 (piece Table), 
+해당 기물 등장 확률의 수치",
+,,
+,,
+,,
+,redbox_spawn,빨간 상자 기물 등장 확률
+,,
+,설명,
+,"stage Table의 G열
+빨간 상자 기물 ID를 참조 하여 (piece Table), 
+해당 기물 등장 확률의 수치",
+,,
+,,
+,,
+,img_name_id,스테이지 이미지 리소스 ID
+,,
+,설명,
+,"객체 이미지 리소스 참조 ID (res_img Table 참조)
+빈칸일 경우 = null",

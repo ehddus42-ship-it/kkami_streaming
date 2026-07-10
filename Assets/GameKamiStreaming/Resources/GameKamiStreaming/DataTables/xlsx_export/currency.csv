@@ -1,0 +1,9 @@
+﻿자원 ID,자원 이름,자원 이미지 리소스 ID
+currency_ID,currency_name,img_name_ID
+int,string,string
+20001,팔로우,img_follow_01
+20002,조회수,img_watch_01
+20003,팬심,img_love_01
+20004,도네이션,img_donation_01
+20005,빨간 도네이션,img_reddonation_01
+20006,정기구독자,img_subscriber_01

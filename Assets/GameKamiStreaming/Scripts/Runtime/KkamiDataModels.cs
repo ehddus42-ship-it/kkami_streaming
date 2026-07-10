@@ -37,6 +37,7 @@ namespace GameKamiStreaming
         public int stageId;
         public int bossId;
         public int timeLimitSeconds;
+        public string imageId;
         public string effectId;
         public readonly List<StagePieceWeight> pieceWeights = new List<StagePieceWeight>();
     }
@@ -46,7 +47,7 @@ namespace GameKamiStreaming
     {
         public int tileId;
         public int reinforcedType;
-        public int upAmount;
+        public float upAmount;
         public bool useSubscription;
         public int followCost;
         public int watcherCost;
@@ -64,5 +65,15 @@ namespace GameKamiStreaming
         public string effectId;
         public string effectName;
         public string prefabPath;
+    }
+
+    [Serializable]
+    public sealed class ChatRow
+    {
+        public int chatId;
+        public string dialogue;
+        public float spawnWeight;
+        public string viewerImageId;
+        public string kkamiPortraitImageId;
     }
 }

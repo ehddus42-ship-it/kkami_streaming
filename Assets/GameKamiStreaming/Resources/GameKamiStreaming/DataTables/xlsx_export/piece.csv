@@ -1,0 +1,8 @@
+﻿기물 ID,기물 이름,채굴 자원 종류,초기 채굴 자원량,기물 체력,기물 이미지 리소스 ID,기물 사운드 리소스 ID,기물 이펙트 리소스 ID
+piece_id,piece_name,currency_id,start_currency_amount,piece_hp,img_name_ID,sfx_name_ID,vfx_name_ID
+int,string,int,int,int,string,string,string
+10001,키보드,20001,1,2,I20101,,
+10002,카메라,20002,1,10,I20201,,
+10003,에너지 드링크,20003,1,75,I20301,,
+10004,상자,20004,1,250,I20401,,
+10005,빨간상자,20005,1,500,I20501,,

@@ -1,0 +1,5 @@
+﻿채굴꾼 ID,채굴꾼 이름,채굴꾼 이미지 리소스 ID,채굴꾼 사운드 리소스 ID,채굴꾼 이펙트 리소스 ID,채굴꾼 최초 공격력,채굴꾼 최초 공격속도,채굴꾼 최초 공격범위,유저 조작 유무
+miner_ID, miner_name,img_name_ID,sfx_name_ID,vfx_name_ID,miner_start_atk,miner_start_atkspeed,miner_start_atkrange,user_play_ox
+string,string,string,string,string,float,float,float,bool
+M10001,까미,,sfx_kkami_01,vfx_kkami_01,0.5,1,1,True
+M10002,매니저,,sfx_manger_01,vfx_manager_01,0.5,0.75,1.5,False

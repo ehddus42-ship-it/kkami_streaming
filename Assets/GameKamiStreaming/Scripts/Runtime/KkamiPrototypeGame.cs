@@ -36,7 +36,7 @@ namespace GameKamiStreaming
         const string TemporaryStageJumpButtonGroupName = "Temporary Stage Jump Buttons";
         const int StageSpriteGroupSize = 10;
         const int StageSpriteGroupCount = 5;
-        const int StageIdSpriteBase = 30001;
+        const int StageIdSpriteBase = 40001;
         static readonly int[] TemporaryStageJumpNumbers = { 9, 19, 29, 39, 49 };
         const float StageIndicatorNumberScale = 1.45f;
         const string StageIndicatorSpriteId = "stage_ui";
@@ -53,10 +53,10 @@ namespace GameKamiStreaming
         static readonly Dictionary<int, BossDefinition> BossDefinitions = new Dictionary<int, BossDefinition>
         {
             {
-                50001,
+                30001,
                 new BossDefinition
                 {
-                    pieceId = 50001,
+                    pieceId = 30001,
                     size = 260f,
                     moveInterval = 1f,
                     moveStepDistance = 190f * 1.8f,
@@ -77,10 +77,10 @@ namespace GameKamiStreaming
                 }
             },
             {
-                50002,
+                30002,
                 new BossDefinition
                 {
-                    pieceId = 50002,
+                    pieceId = 30002,
                     size = 260f * 1.2f,
                     moveInterval = 1f,
                     moveStepDistance = 190f * 1.8f * 2f,
@@ -105,10 +105,10 @@ namespace GameKamiStreaming
                 }
             },
             {
-                50004,
+                30004,
                 new BossDefinition
                 {
-                    pieceId = 50004,
+                    pieceId = 30004,
                     size = 260f,
                     moveInterval = 1f,
                     pattern = BossPieceView.BossPattern.Burrow,
@@ -121,7 +121,7 @@ namespace GameKamiStreaming
                     },
                     emergeAnimation = new AnimationSource
                     {
-                        sheetPath = "GameKamiStreaming/Sprites/vfx_boss4_01_1",
+                        sheetPath = "GameKamiStreaming/Sprites/vfx_boss4_1_1",
                         frameCount = 16
                     },
                     deathAnimation = new AnimationSource
@@ -441,6 +441,11 @@ namespace GameKamiStreaming
 
         string GetCurrentStageSpriteId()
         {
+            if (currentStage != null && !string.IsNullOrWhiteSpace(currentStage.imageId))
+            {
+                return currentStage.imageId;
+            }
+
             var stageOffset = currentStage != null ? currentStage.stageId - StageIdSpriteBase : currentStageIndex;
             if (stageOffset < 0)
             {
@@ -2012,6 +2017,11 @@ namespace GameKamiStreaming
             if (idleSprite == null && definition != null && !string.IsNullOrWhiteSpace(definition.fallbackImageId))
             {
                 idleSprite = LoadSprite(definition.fallbackImageId);
+            }
+            if (idleSprite == null && definition == null)
+            {
+                Destroy(bossRoot.gameObject);
+                return;
             }
 
             var view = bossRoot.gameObject.AddComponent<DestructiblePieceView>();
