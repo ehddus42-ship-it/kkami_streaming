@@ -82,7 +82,7 @@ namespace GameKamiStreaming
                     pieceId = 50002,
                     size = 260f * 1.2f,
                     moveInterval = 1f,
-                    moveStepDistance = 190f * 1.8f,
+                    moveStepDistance = 190f * 1.8f * 2f,
                     moveDurations = new[] { 0.45f, 0.32f, 0.22f, 0.14f },
                     preserveAspect = false,
                     fallbackImageId = "boss/boss_1/boss_1",
