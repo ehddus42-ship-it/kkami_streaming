@@ -11,8 +11,10 @@ namespace GameKamiStreaming
         float hp;
         bool deathHandledExternally;
         bool defeated;
+        bool hittable = true;
 
         public bool IsDestroyed => piece == null || hp <= 0f;
+        public bool IsHittable => hittable;
         public PieceRow Piece => piece;
         public RectTransform RectTransform => transform as RectTransform;
         public event System.Action<DestructiblePieceView> Defeated;
@@ -32,9 +34,14 @@ namespace GameKamiStreaming
             deathHandledExternally = value;
         }
 
+        public void SetHittable(bool value)
+        {
+            hittable = value;
+        }
+
         public void Hit(float damage, bool playFeedback)
         {
-            if (piece == null || defeated)
+            if (piece == null || defeated || !hittable)
             {
                 return;
             }
