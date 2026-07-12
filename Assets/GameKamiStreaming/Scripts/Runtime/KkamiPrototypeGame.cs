@@ -105,6 +105,29 @@ namespace GameKamiStreaming
                 }
             },
             {
+                30003,
+                new BossDefinition
+                {
+                    pieceId = 30003,
+                    size = 260f * 1.2f,
+                    moveInterval = 0.5f,
+                    moveStepDistance = 190f * 1.8f * 2f,
+                    moveDurations = new[] { 0.14f },
+                    animateIdleWithMoveAnimation = true,
+                    preserveAspect = false,
+                    moveAnimation = new AnimationSource
+                    {
+                        sheetPath = "GameKamiStreaming/Sprites/vfx_boss3_01",
+                        frameCount = 8
+                    },
+                    deathAnimation = new AnimationSource
+                    {
+                        sheetPath = "GameKamiStreaming/Sprites/vfx_boss3_02",
+                        frameCount = 12
+                    }
+                }
+            },
+            {
                 30004,
                 new BossDefinition
                 {
@@ -114,6 +137,11 @@ namespace GameKamiStreaming
                     pattern = BossPieceView.BossPattern.Burrow,
                     disappearDelay = 0.7f,
                     hiddenDelay = 0.5f,
+                    idleAnimation = new AnimationSource
+                    {
+                        sheetPath = "GameKamiStreaming/Sprites/vfx_boss4_idle",
+                        frameCount = 8
+                    },
                     moveAnimation = new AnimationSource
                     {
                         sheetPath = "GameKamiStreaming/Sprites/vfx_boss4_1",
@@ -127,6 +155,30 @@ namespace GameKamiStreaming
                     deathAnimation = new AnimationSource
                     {
                         sheetPath = "GameKamiStreaming/Sprites/vfx_boss4_02",
+                        frameCount = 16
+                    }
+                }
+            },
+            {
+                30005,
+                new BossDefinition
+                {
+                    pieceId = 30005,
+                    size = 260f * 1.25f * 2f,
+                    moveInterval = 1f,
+                    moveStepDistance = 190f * 1.8f,
+                    moveBoundsScale = 0.5f,
+                    moveDurations = new[] { 0.9f },
+                    animateIdleWithMoveAnimation = true,
+                    pattern = BossPieceView.BossPattern.Airborne,
+                    moveAnimation = new AnimationSource
+                    {
+                        sheetPath = "GameKamiStreaming/Sprites/vfx_boss5_01",
+                        frameCount = 12
+                    },
+                    deathAnimation = new AnimationSource
+                    {
+                        sheetPath = "GameKamiStreaming/Sprites/vfx_boss5_02",
                         frameCount = 16
                     }
                 }
@@ -184,6 +236,7 @@ namespace GameKamiStreaming
             public float size;
             public float moveInterval;
             public float moveStepDistance;
+            public float moveBoundsScale = 1f;
             public float[] moveDurations;
             public bool animateIdleWithMoveAnimation;
             public bool preserveAspect = true;
@@ -191,6 +244,7 @@ namespace GameKamiStreaming
             public float disappearDelay;
             public float hiddenDelay;
             public string fallbackImageId;
+            public AnimationSource idleAnimation;
             public AnimationSource moveAnimation;
             public AnimationSource emergeAnimation;
             public AnimationSource deathAnimation;
@@ -2004,12 +2058,15 @@ namespace GameKamiStreaming
             var image = bossRoot.gameObject.AddComponent<Image>();
             image.raycastTarget = false;
             image.preserveAspect = true;
+            var idleFrames = definition != null ? LoadAnimationFrames(definition.idleAnimation, new Vector2(0.5f, 0.5f)) : new List<Sprite>();
             var moveFrames = definition != null ? LoadAnimationFrames(definition.moveAnimation, new Vector2(0.5f, 0.5f)) : new List<Sprite>();
             var emergeFrames = definition != null ? LoadAnimationFrames(definition.emergeAnimation, new Vector2(0.5f, 0.5f)) : new List<Sprite>();
             var deathFrames = definition != null ? LoadAnimationFrames(definition.deathAnimation, new Vector2(0.5f, 0.5f)) : new List<Sprite>();
-            var idleSprite = definition != null && definition.animateIdleWithMoveAnimation && moveFrames.Count > 0
-                ? moveFrames[0]
-                : LoadSprite(bossPiece.imageId);
+            var idleSprite = idleFrames.Count > 0
+                ? idleFrames[0]
+                : definition != null && definition.animateIdleWithMoveAnimation && moveFrames.Count > 0
+                    ? moveFrames[0]
+                    : LoadSprite(bossPiece.imageId);
             if (idleSprite == null && moveFrames.Count > 0)
             {
                 idleSprite = moveFrames[0];
@@ -2038,11 +2095,13 @@ namespace GameKamiStreaming
                     view,
                     image,
                     idleSprite,
+                    idleFrames,
                     moveFrames,
                     emergeFrames,
                     deathFrames,
                     definition.moveInterval,
                     definition.moveStepDistance,
+                    definition.moveBoundsScale,
                     definition.moveDurations,
                     definition.pattern,
                     definition.disappearDelay,
@@ -2255,7 +2314,7 @@ namespace GameKamiStreaming
             return false;
         }
 
-        public bool TryGetBossMovePath(RectTransform bossTransform, float stepDistance, Vector2 direction, List<Vector2> path, out Vector2 outgoingDirection)
+        public bool TryGetBossMovePath(RectTransform bossTransform, float stepDistance, Vector2 direction, List<Vector2> path, out Vector2 outgoingDirection, float boundsScale = 1f)
         {
             if (path != null)
             {
@@ -2268,7 +2327,7 @@ namespace GameKamiStreaming
                 return false;
             }
 
-            var halfSize = Mathf.Max(bossTransform.rect.width, bossTransform.rect.height) * 0.5f;
+            var halfSize = Mathf.Max(bossTransform.rect.width, bossTransform.rect.height) * 0.5f * Mathf.Clamp(boundsScale, 0.1f, 1f);
             var currentPosition = bossTransform.anchoredPosition;
             var center = GetCentroid(polygon);
             if (!IsPieceInsidePolygon(currentPosition, halfSize, polygon))

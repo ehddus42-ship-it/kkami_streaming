@@ -6,6 +6,6 @@
 10005,빨간상자,20005,1,500,img_redbox_01,
 30001,boss1,20006,1,75,vfx_boss1_01,vfx_boss1_01
 30002,boss2,20006,3,180,vfx_boss2_01,vfx_boss2_01
-30003,boss3,20006,5,400,,vfx_boss3_01
+30003,boss3,20006,5,400,vfx_boss3_01,vfx_boss3_01
 30004,boss4,20006,8,800,boss/boss_4/boss4,vfx_boss4_01
-30005,boss5,20006,100,1500,,vfx_boss5_01
+30005,boss5,20006,100,1500,vfx_boss5_01,vfx_boss5_01

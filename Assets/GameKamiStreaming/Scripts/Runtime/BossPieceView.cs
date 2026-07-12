@@ -10,7 +10,8 @@ namespace GameKamiStreaming
         public enum BossPattern
         {
             Move,
-            Burrow
+            Burrow,
+            Airborne
         }
 
         const float DefaultMoveIntervalSeconds = 1f;
@@ -23,6 +24,7 @@ namespace GameKamiStreaming
         DestructiblePieceView pieceView;
         Image image;
         Sprite idleSprite;
+        List<Sprite> idleFrames;
         List<Sprite> moveFrames;
         List<Sprite> emergeFrames;
         List<Sprite> deathFrames;
@@ -30,6 +32,7 @@ namespace GameKamiStreaming
         Coroutine moveRoutine;
         float moveIntervalSeconds = DefaultMoveIntervalSeconds;
         float moveStepDistance = DefaultMoveStepDistance;
+        float moveBoundsScale = 1f;
         float[] moveDurations;
         BossPattern pattern;
         float disappearDelaySeconds;
@@ -44,11 +47,13 @@ namespace GameKamiStreaming
             DestructiblePieceView view,
             Image targetImage,
             Sprite idle,
+            List<Sprite> idleAnimation,
             List<Sprite> moveAnimation,
             List<Sprite> emergeAnimation,
             List<Sprite> deathAnimation,
             float moveInterval,
             float moveStep,
+            float movementBoundsScale,
             float[] moveDurationOptions,
             BossPattern bossPattern,
             float disappearDelay,
@@ -59,11 +64,13 @@ namespace GameKamiStreaming
             pieceView = view;
             image = targetImage;
             idleSprite = idle;
+            idleFrames = idleAnimation;
             moveFrames = moveAnimation;
             emergeFrames = emergeAnimation;
             deathFrames = deathAnimation;
             moveIntervalSeconds = moveInterval > 0f ? moveInterval : DefaultMoveIntervalSeconds;
             moveStepDistance = moveStep > 0f ? moveStep : DefaultMoveStepDistance;
+            moveBoundsScale = Mathf.Clamp(movementBoundsScale, 0.1f, 1f);
             moveDurations = moveDurationOptions != null && moveDurationOptions.Length > 0 ? moveDurationOptions : new[] { DefaultMoveDurationSeconds };
             pattern = bossPattern;
             disappearDelaySeconds = Mathf.Max(0f, disappearDelay);
@@ -78,7 +85,9 @@ namespace GameKamiStreaming
                 pieceView.Defeated += HandleDefeated;
             }
 
-            moveRoutine = StartCoroutine(pattern == BossPattern.Burrow ? BurrowLoop() : MoveLoop());
+            moveRoutine = StartCoroutine(pattern == BossPattern.Burrow
+                ? BurrowLoop()
+                : pattern == BossPattern.Airborne ? AirborneLoop() : MoveLoop());
         }
 
         void OnDestroy()
@@ -87,6 +96,122 @@ namespace GameKamiStreaming
             {
                 pieceView.Defeated -= HandleDefeated;
             }
+
+        }
+
+        IEnumerator AirborneLoop()
+        {
+            while (!defeated)
+            {
+                yield return WaitMoveInterval();
+                if (defeated || owner == null || rectTransform == null)
+                {
+                    yield break;
+                }
+
+                BringToFront();
+                var path = new List<Vector2>();
+                var moveDirection = PickMoveDirection();
+                if (owner.TryGetBossMovePath(rectTransform, moveStepDistance, moveDirection, path, out var outgoingDirection, moveBoundsScale))
+                {
+                    lastMoveDirection = outgoingDirection;
+                    yield return FlyAlongPath(path);
+                }
+            }
+        }
+
+        IEnumerator FlyAlongPath(List<Vector2> path)
+        {
+            if (path == null || path.Count == 0)
+            {
+                yield break;
+            }
+
+            var startPosition = rectTransform.anchoredPosition;
+            var totalDistance = 0f;
+            for (var i = 0; i < path.Count; i++)
+            {
+                totalDistance += Vector2.Distance(i == 0 ? startPosition : path[i - 1], path[i]);
+            }
+
+            if (totalDistance <= 0.001f)
+            {
+                yield break;
+            }
+
+            var moveDuration = PickMoveDuration();
+            var frameTimer = 0f;
+            var frameIndex = 0;
+            yield return FadeBody(1f, 0f, 0.28f);
+            if (defeated)
+            {
+                yield break;
+            }
+
+            for (var i = 0; i < path.Count; i++)
+            {
+                var segmentStart = rectTransform.anchoredPosition;
+                var segmentEnd = path[i];
+                var segmentDistance = Vector2.Distance(segmentStart, segmentEnd);
+                var segmentDuration = moveDuration * (segmentDistance / totalDistance);
+                var elapsed = 0f;
+                while (elapsed < segmentDuration)
+                {
+                    if (defeated || rectTransform == null)
+                    {
+                        yield break;
+                    }
+
+                    BringToFront();
+                    elapsed += Time.deltaTime;
+                    frameTimer += Time.deltaTime;
+                    rectTransform.anchoredPosition = Vector2.Lerp(segmentStart, segmentEnd, Mathf.Clamp01(elapsed / segmentDuration));
+
+                    if (moveFrames != null && moveFrames.Count > 0 && image != null && frameTimer >= MoveFrameSeconds)
+                    {
+                        image.sprite = moveFrames[frameIndex % moveFrames.Count];
+                        frameIndex++;
+                        frameTimer = 0f;
+                    }
+
+                    yield return null;
+                }
+
+                rectTransform.anchoredPosition = segmentEnd;
+            }
+
+            yield return FadeBody(0f, 1f, 0.28f);
+            if (!animateIdleWithMoveAnimation && image != null && idleSprite != null)
+            {
+                image.sprite = idleSprite;
+            }
+        }
+
+        IEnumerator FadeBody(float fromAlpha, float toAlpha, float duration)
+        {
+            if (image == null)
+            {
+                yield break;
+            }
+
+            var elapsed = 0f;
+            while (elapsed < duration)
+            {
+                if (defeated)
+                {
+                    yield break;
+                }
+
+                elapsed += Time.deltaTime;
+                var color = image.color;
+                color.a = Mathf.Lerp(fromAlpha, toAlpha, Mathf.Clamp01(elapsed / duration));
+                image.color = color;
+                yield return null;
+            }
+
+            var finalColor = image.color;
+            finalColor.a = toAlpha;
+            image.color = finalColor;
         }
 
         IEnumerator MoveLoop()
@@ -102,7 +227,7 @@ namespace GameKamiStreaming
                 BringToFront();
                 var path = new List<Vector2>();
                 var moveDirection = PickMoveDirection();
-                if (owner.TryGetBossMovePath(rectTransform, moveStepDistance, moveDirection, path, out var outgoingDirection))
+                if (owner.TryGetBossMovePath(rectTransform, moveStepDistance, moveDirection, path, out var outgoingDirection, moveBoundsScale))
                 {
                     lastMoveDirection = outgoingDirection;
                     yield return MoveAlongPath(path);
@@ -204,7 +329,7 @@ namespace GameKamiStreaming
         {
             while (!defeated)
             {
-                yield return new WaitForSeconds(disappearDelaySeconds);
+                yield return PlayIdleFrames(disappearDelaySeconds);
                 if (defeated || owner == null || rectTransform == null)
                 {
                     yield break;
@@ -233,10 +358,46 @@ namespace GameKamiStreaming
                 BringToFront();
                 SetVisibleAndHittable(true);
                 yield return PlayFrames(emergeFrames, MoveFrameSeconds);
-                if (image != null && idleSprite != null)
+                if (image != null && idleFrames != null && idleFrames.Count > 0)
+                {
+                    image.sprite = idleFrames[0];
+                }
+                else if (image != null && idleSprite != null)
                 {
                     image.sprite = idleSprite;
                 }
+            }
+        }
+
+        IEnumerator PlayIdleFrames(float duration)
+        {
+            if (idleFrames == null || idleFrames.Count == 0 || image == null)
+            {
+                yield return new WaitForSeconds(duration);
+                yield break;
+            }
+
+            var elapsed = 0f;
+            var frameTimer = 0f;
+            var frameIndex = 0;
+            image.enabled = true;
+            while (elapsed < duration)
+            {
+                if (defeated)
+                {
+                    yield break;
+                }
+
+                elapsed += Time.deltaTime;
+                frameTimer += Time.deltaTime;
+                if (frameTimer >= MoveFrameSeconds)
+                {
+                    image.sprite = idleFrames[frameIndex % idleFrames.Count];
+                    frameIndex++;
+                    frameTimer = 0f;
+                }
+
+                yield return null;
             }
         }
 
@@ -298,6 +459,12 @@ namespace GameKamiStreaming
             }
 
             defeated = true;
+            if (image != null)
+            {
+                var color = image.color;
+                color.a = 1f;
+                image.color = color;
+            }
             BringToFront();
             if (moveRoutine != null)
             {
