@@ -21,7 +21,9 @@ namespace GameKamiStreaming
         public int resourceAmount;
         public int maxHp;
         public string imageId;
+        public string soundId;
         public string effectId;
+        public string deathEffectId;
     }
 
     [Serializable]
@@ -47,6 +49,7 @@ namespace GameKamiStreaming
     {
         public int tileId;
         public int reinforcedType;
+        public int upgradeRank;
         public float upAmount;
         public bool useSubscription;
         public int followCost;
@@ -54,6 +57,9 @@ namespace GameKamiStreaming
         public int loveCost;
         public int donationCost;
         public int redDonationCost;
+        public int subscriberCost;
+        public string imageId;
+        public string soundId;
         public string effectId;
         public int unlockPieceId;
         public int unlockResourceId;

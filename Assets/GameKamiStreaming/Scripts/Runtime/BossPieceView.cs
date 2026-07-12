@@ -19,8 +19,9 @@ namespace GameKamiStreaming
         const float DefaultMoveStepDistance = 190f * 1.8f;
         const float MoveFrameSeconds = 0.045f;
         const float DeathFrameSeconds = 0.055f * 1.5f;
+        static readonly Vector2[] MoveDirections = { Vector2.up, Vector2.down, Vector2.left, Vector2.right };
 
-        KkamiPrototypeGame owner;
+        IBossMovementArea movementArea;
         DestructiblePieceView pieceView;
         Image image;
         Sprite idleSprite;
@@ -41,9 +42,10 @@ namespace GameKamiStreaming
         int idleFrameIndex;
         bool animateIdleWithMoveAnimation;
         bool defeated;
+        readonly List<Vector2> movePath = new List<Vector2>();
 
         public void Initialize(
-            KkamiPrototypeGame game,
+            IBossMovementArea area,
             DestructiblePieceView view,
             Image targetImage,
             Sprite idle,
@@ -60,7 +62,7 @@ namespace GameKamiStreaming
             float hiddenDelay,
             bool animateIdle)
         {
-            owner = game;
+            movementArea = area;
             pieceView = view;
             image = targetImage;
             idleSprite = idle;
@@ -104,18 +106,18 @@ namespace GameKamiStreaming
             while (!defeated)
             {
                 yield return WaitMoveInterval();
-                if (defeated || owner == null || rectTransform == null)
+                if (defeated || movementArea == null || rectTransform == null)
                 {
                     yield break;
                 }
 
                 BringToFront();
-                var path = new List<Vector2>();
+                movePath.Clear();
                 var moveDirection = PickMoveDirection();
-                if (owner.TryGetBossMovePath(rectTransform, moveStepDistance, moveDirection, path, out var outgoingDirection, moveBoundsScale))
+                if (movementArea.TryGetBossMovePath(rectTransform, moveStepDistance, moveDirection, movePath, out var outgoingDirection, moveBoundsScale))
                 {
                     lastMoveDirection = outgoingDirection;
-                    yield return FlyAlongPath(path);
+                    yield return FlyAlongPath(movePath);
                 }
             }
         }
@@ -219,18 +221,18 @@ namespace GameKamiStreaming
             while (!defeated)
             {
                 yield return WaitMoveInterval();
-                if (defeated || owner == null || rectTransform == null)
+                if (defeated || movementArea == null || rectTransform == null)
                 {
                     yield break;
                 }
 
                 BringToFront();
-                var path = new List<Vector2>();
+                movePath.Clear();
                 var moveDirection = PickMoveDirection();
-                if (owner.TryGetBossMovePath(rectTransform, moveStepDistance, moveDirection, path, out var outgoingDirection, moveBoundsScale))
+                if (movementArea.TryGetBossMovePath(rectTransform, moveStepDistance, moveDirection, movePath, out var outgoingDirection, moveBoundsScale))
                 {
                     lastMoveDirection = outgoingDirection;
-                    yield return MoveAlongPath(path);
+                    yield return MoveAlongPath(movePath);
                 }
             }
         }
@@ -330,7 +332,7 @@ namespace GameKamiStreaming
             while (!defeated)
             {
                 yield return PlayIdleFrames(disappearDelaySeconds);
-                if (defeated || owner == null || rectTransform == null)
+                if (defeated || movementArea == null || rectTransform == null)
                 {
                     yield break;
                 }
@@ -345,12 +347,12 @@ namespace GameKamiStreaming
 
                 SetVisibleAndHittable(false);
                 yield return new WaitForSeconds(hiddenDelaySeconds);
-                if (defeated || owner == null || rectTransform == null)
+                if (defeated || movementArea == null || rectTransform == null)
                 {
                     yield break;
                 }
 
-                if (owner.TryGetBossRandomPosition(rectTransform, out var nextPosition))
+                if (movementArea.TryGetBossRandomPosition(rectTransform, out var nextPosition))
                 {
                     rectTransform.anchoredPosition = nextPosition;
                 }
@@ -424,21 +426,20 @@ namespace GameKamiStreaming
 
         Vector2 PickMoveDirection()
         {
-            var directions = new[]
+            if (lastMoveDirection.sqrMagnitude <= 0.001f)
             {
-                Vector2.up,
-                Vector2.down,
-                Vector2.left,
-                Vector2.right
-            };
-
-            var candidates = new List<Vector2>(directions);
-            if (lastMoveDirection.sqrMagnitude > 0.001f && candidates.Count > 1)
-            {
-                candidates.RemoveAll(direction => Vector2.Dot(direction, lastMoveDirection.normalized) < -0.95f);
+                return MoveDirections[Random.Range(0, MoveDirections.Length)];
             }
 
-            return candidates[Random.Range(0, candidates.Count)];
+            var oppositeDirection = -lastMoveDirection.normalized;
+            Vector2 direction;
+            do
+            {
+                direction = MoveDirections[Random.Range(0, MoveDirections.Length)];
+            }
+            while (Vector2.Dot(direction, oppositeDirection) >= 0.95f);
+
+            return direction;
         }
 
         float PickMoveDuration()
@@ -493,9 +494,9 @@ namespace GameKamiStreaming
                 }
             }
 
-            if (owner != null && pieceView != null && pieceView.Piece != null)
+            if (pieceView != null && pieceView.Piece != null)
             {
-                owner.CollectPiece(pieceView.Piece, transform as RectTransform);
+                pieceView.RequestCollection();
             }
 
             Destroy(gameObject);

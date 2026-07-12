@@ -9,8 +9,10 @@ namespace GameKamiStreaming
         const float DigitWidth = 34f;
         const float DigitHeight = 54f;
 
+        static readonly Dictionary<char, Sprite> SpriteByCharacter = new Dictionary<char, Sprite>();
+
         readonly List<Image> digits = new List<Image>();
-        readonly Dictionary<char, Sprite> spriteByChar = new Dictionary<char, Sprite>();
+        string displayedText;
 
         void Awake()
         {
@@ -20,13 +22,7 @@ namespace GameKamiStreaming
         public void Initialize()
         {
             transform.localScale = Vector3.one;
-            spriteByChar.Clear();
-            for (var i = 0; i <= 9; i++)
-            {
-                spriteByChar[(char)('0' + i)] = LoadSprite(i.ToString());
-            }
-            spriteByChar['.'] = LoadSprite("dotdot");
-            spriteByChar[':'] = LoadSprite("dotdot");
+            EnsureSpriteCache();
 
             var layout = GetComponent<HorizontalLayoutGroup>();
             if (layout != null)
@@ -52,11 +48,19 @@ namespace GameKamiStreaming
 
         public void SetText(string value)
         {
+            value = value ?? string.Empty;
             transform.localScale = Vector3.one;
-            if (spriteByChar.Count == 0)
+            if (SpriteByCharacter.Count == 0)
             {
                 Initialize();
             }
+
+            if (displayedText == value)
+            {
+                return;
+            }
+
+            displayedText = value;
 
             while (digits.Count < value.Length)
             {
@@ -69,14 +73,30 @@ namespace GameKamiStreaming
             for (var i = 0; i < digits.Count; i++)
             {
                 Sprite sprite = null;
-                var active = i < value.Length && spriteByChar.TryGetValue(value[i], out sprite) && sprite != null;
+                var active = i < value.Length && SpriteByCharacter.TryGetValue(value[i], out sprite) && sprite != null;
                 digits[i].gameObject.SetActive(active);
                 if (active)
                 {
                     digits[i].sprite = sprite;
-                    ConfigureDigit(digits[i]);
                 }
             }
+        }
+
+        static void EnsureSpriteCache()
+        {
+            if (SpriteByCharacter.Count > 0)
+            {
+                return;
+            }
+
+            for (var i = 0; i <= 9; i++)
+            {
+                SpriteByCharacter[(char)('0' + i)] = LoadSprite(i.ToString());
+            }
+
+            var separatorSprite = LoadSprite("dotdot");
+            SpriteByCharacter['.'] = separatorSprite;
+            SpriteByCharacter[':'] = separatorSprite;
         }
 
         void CacheExistingDigits()

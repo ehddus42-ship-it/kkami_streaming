@@ -7,12 +7,12 @@ namespace GameKamiStreaming
     {
         const string TableRoot = "GameKamiStreaming/DataTables/";
 
-        public readonly List<ResourceRow> Resources = new List<ResourceRow>();
-        public readonly List<PieceRow> Pieces = new List<PieceRow>();
-        public readonly List<StageRow> Stages = new List<StageRow>();
-        public readonly List<SkillTreeRow> SkillTree = new List<SkillTreeRow>();
-        public readonly List<EffectRow> Effects = new List<EffectRow>();
-        public readonly List<ChatRow> Chats = new List<ChatRow>();
+        public List<ResourceRow> Resources { get; } = new List<ResourceRow>();
+        public List<PieceRow> Pieces { get; } = new List<PieceRow>();
+        public List<StageRow> Stages { get; } = new List<StageRow>();
+        public List<SkillTreeRow> SkillTree { get; } = new List<SkillTreeRow>();
+        public List<EffectRow> Effects { get; } = new List<EffectRow>();
+        public List<ChatRow> Chats { get; } = new List<ChatRow>();
 
         readonly Dictionary<int, ResourceRow> resourcesById = new Dictionary<int, ResourceRow>();
         readonly Dictionary<int, PieceRow> piecesById = new Dictionary<int, PieceRow>();
@@ -55,7 +55,7 @@ namespace GameKamiStreaming
 
         void LoadResources()
         {
-            foreach (var row in Read("resource").Rows)
+            foreach (var row in Read("currency").Rows)
             {
                 var data = new ResourceRow
                 {
@@ -81,7 +81,9 @@ namespace GameKamiStreaming
                     resourceAmount = Int(row, "resource_int"),
                     maxHp = Mathf.Max(1, Int(row, "hp_int")),
                     imageId = Str(row, "pieceimg_id"),
-                    effectId = Str(row, "effect_id")
+                    soundId = Str(row, "sound_id"),
+                    effectId = Str(row, "effect_id"),
+                    deathEffectId = Str(row, "death_effect_id")
                 };
                 Pieces.Add(data);
                 piecesById[data.pieceId] = data;
@@ -110,9 +112,10 @@ namespace GameKamiStreaming
                     }
 
                     var idText = pair.Key.Substring("piece_".Length, pair.Key.Length - "piece_".Length - "_weight".Length);
-                    if (int.TryParse(idText, out var pieceId) && Float(pair.Value) > 0f)
+                    var weight = Float(pair.Value);
+                    if (int.TryParse(idText, out var pieceId) && weight > 0f)
                     {
-                        data.pieceWeights.Add(new StagePieceWeight { pieceId = pieceId, weight = Float(pair.Value) });
+                        data.pieceWeights.Add(new StagePieceWeight { pieceId = pieceId, weight = weight });
                     }
                 }
 
@@ -128,6 +131,7 @@ namespace GameKamiStreaming
                 {
                     tileId = Int(row, "tile_id"),
                     reinforcedType = Int(row, "reinforced_int"),
+                    upgradeRank = Int(row, "upgrade_rank"),
                     upAmount = Float(row, "up_int"),
                     useSubscription = Bool(row, "sub_use"),
                     followCost = Int(row, "follow_int"),
@@ -135,6 +139,9 @@ namespace GameKamiStreaming
                     loveCost = Int(row, "love_int"),
                     donationCost = Int(row, "donation_int"),
                     redDonationCost = Int(row, "reddonation_int"),
+                    subscriberCost = Int(row, "subscriber_int"),
+                    imageId = Str(row, "image_id"),
+                    soundId = Str(row, "sound_id"),
                     effectId = Str(row, "effect_id"),
                     unlockPieceId = Int(row, "unlock_piece_id"),
                     unlockResourceId = Int(row, "unlock_resource_id")
@@ -144,7 +151,7 @@ namespace GameKamiStreaming
 
         void LoadEffects()
         {
-            foreach (var row in Read("effects").Rows)
+            foreach (var row in Read("res_vfx").Rows)
             {
                 var data = new EffectRow
                 {

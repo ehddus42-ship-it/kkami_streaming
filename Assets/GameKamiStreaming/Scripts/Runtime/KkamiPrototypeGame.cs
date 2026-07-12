@@ -10,7 +10,7 @@ using UnityEngine.UI;
 
 namespace GameKamiStreaming
 {
-    public sealed class KkamiPrototypeGame : MonoBehaviour
+    public sealed class KkamiPrototypeGame : MonoBehaviour, IBossMovementArea
     {
         const string SpriteRoot = "GameKamiStreaming/Sprites/";
         const int TargetPieceCount = 12;
@@ -43,12 +43,12 @@ namespace GameKamiStreaming
         const string BossFrameFormat = "000";
         static readonly string[] KkamiAppearSpriteIds =
         {
-            "kkami_appear/love",
-            "kkami_appear/confused",
-            "kkami_appear/angry",
-            "kkami_appear/super_angry",
-            "kkami_appear/shocked",
-            "kkami_appear/sad"
+            "img_love_01",
+            "img_confused_01",
+            "img_angry_01",
+            "img_superangry_01",
+            "img_shocked_01",
+            "img_sad_01"
         };
         static readonly Dictionary<int, BossDefinition> BossDefinitions = new Dictionary<int, BossDefinition>
         {
@@ -139,7 +139,7 @@ namespace GameKamiStreaming
                     hiddenDelay = 0.5f,
                     idleAnimation = new AnimationSource
                     {
-                        sheetPath = "GameKamiStreaming/Sprites/vfx_boss4_idle",
+                        sheetPath = "GameKamiStreaming/Sprites/vfx_boss4_01",
                         frameCount = 8
                     },
                     moveAnimation = new AnimationSource
@@ -185,11 +185,9 @@ namespace GameKamiStreaming
             }
         };
 
-        readonly Dictionary<int, int> resourceAmounts = new Dictionary<int, int>();
         readonly Dictionary<int, PixelNumberLabel> resourceLabels = new Dictionary<int, PixelNumberLabel>();
         readonly Dictionary<int, PixelNumberLabel> skillTreeResourceLabels = new Dictionary<int, PixelNumberLabel>();
         readonly Dictionary<string, List<Sprite>> bossAnimationFrames = new Dictionary<string, List<Sprite>>();
-        readonly List<DestructiblePieceView> activePieces = new List<DestructiblePieceView>();
         readonly List<Sprite> miningAttackFrames = new List<Sprite>();
         readonly List<Sprite> kkamiAppearSprites = new List<Sprite>();
 
@@ -216,8 +214,12 @@ namespace GameKamiStreaming
         [SerializeField] Image kkamiAppearImage;
 
         KkamiTableDatabase database;
-        StageRow currentStage;
-        int currentStageIndex;
+        GameResourceManager resourceManager;
+        GameStageManager stageManager;
+        GamePieceManager pieceManager;
+        GameEffectManager effectManager;
+        StageRow currentStage => stageManager != null ? stageManager.Current : null;
+        int currentStageIndex => stageManager != null ? stageManager.CurrentIndex : 0;
         float roundRemainingSeconds;
         float kkamiAppearTimer;
         float skillTreeZoom = 1f;
@@ -322,13 +324,7 @@ namespace GameKamiStreaming
 
         public void CollectPiece(PieceRow piece, RectTransform source)
         {
-            if (!resourceAmounts.ContainsKey(piece.resourceId))
-            {
-                resourceAmounts[piece.resourceId] = 0;
-            }
-
-            resourceAmounts[piece.resourceId] += Mathf.Max(0, piece.resourceAmount);
-            RefreshResourceLabels(piece.resourceId);
+            resourceManager.Add(piece.resourceId, piece.resourceAmount);
 
             PlayCollectBurst(source, piece.resourceId);
             StartCoroutine(RespawnAfterDelay(0.45f));
@@ -336,14 +332,7 @@ namespace GameKamiStreaming
 
         public void PlayHitFeedback(RectTransform source, string effectId)
         {
-            var prefab = LoadEffectPrefab(effectId);
-            if (prefab != null)
-            {
-                Instantiate(prefab, source.position, Quaternion.identity, effectLayer);
-                return;
-            }
-
-            StartCoroutine(Pulse(source));
+            effectManager.PlayHitFeedback(source, effectId);
         }
 
         void InitializeGame()
@@ -361,8 +350,11 @@ namespace GameKamiStreaming
         void InitializeTables()
         {
             database = KkamiTableDatabase.Load();
-            currentStageIndex = 0;
-            currentStage = database.Stages.Count > 0 ? database.Stages[currentStageIndex] : null;
+            resourceManager = new GameResourceManager();
+            resourceManager.Initialize(database.Resources);
+            resourceManager.AmountChanged += HandleResourceAmountChanged;
+            stageManager = new GameStageManager(database.Stages);
+            pieceManager = new GamePieceManager();
         }
 
         bool HasSceneReferences()
@@ -377,13 +369,9 @@ namespace GameKamiStreaming
                 uiCamera = Camera.main;
             }
 
-            resourceAmounts.Clear();
             resourceLabels.Clear();
             skillTreeResourceLabels.Clear();
-            foreach (var resource in database.Resources)
-            {
-                resourceAmounts[resource.resourceId] = 0;
-            }
+            resourceManager.Initialize(database.Resources);
 
             foreach (var counter in canvasRoot.GetComponentsInChildren<ResourceCounterView>(true))
             {
@@ -395,10 +383,10 @@ namespace GameKamiStreaming
                 counter.NumberLabel.Initialize();
                 counter.NumberLabel.SetValue(0);
                 resourceLabels[counter.ResourceId] = counter.NumberLabel;
-                resourceAmounts[counter.ResourceId] = 0;
             }
 
             EnsureEffectLayer();
+            effectManager = new GameEffectManager(this, database, effectLayer);
             EnsureStageImage();
             EnsurePieceDisplayLayer();
             EnsureSpawnPointReferences();
@@ -507,7 +495,7 @@ namespace GameKamiStreaming
             }
 
             var group = Mathf.Clamp((stageOffset / StageSpriteGroupSize) + 1, 1, StageSpriteGroupCount);
-            return "stage" + group;
+            return "img_stage" + group + "_01";
         }
 
         void BuildCameraAndCanvas()
@@ -691,7 +679,6 @@ namespace GameKamiStreaming
             var binding = row.gameObject.AddComponent<ResourceCounterView>();
             binding.Configure(resource.resourceId, number);
             resourceLabels[resource.resourceId] = number;
-            resourceAmounts[resource.resourceId] = 0;
         }
 
         RectTransform BuildSkillTreeResourceWallet(RectTransform parent)
@@ -1690,7 +1677,12 @@ namespace GameKamiStreaming
 
         int GetResourceAmount(int resourceId)
         {
-            return resourceAmounts.TryGetValue(resourceId, out var amount) ? amount : 0;
+            return resourceManager != null ? resourceManager.GetAmount(resourceId) : 0;
+        }
+
+        void HandleResourceAmountChanged(int resourceId, int amount)
+        {
+            RefreshResourceLabels(resourceId);
         }
 
         void RefreshResourceLabels(int resourceId)
@@ -1791,11 +1783,7 @@ namespace GameKamiStreaming
 
         public void StartNextStageFromSkillTree()
         {
-            if (database.Stages.Count > 0)
-            {
-                currentStageIndex = (currentStageIndex + 1) % database.Stages.Count;
-                currentStage = database.Stages[currentStageIndex];
-            }
+            stageManager.MoveNext();
 
             StartSelectedStageFromSkillTree();
         }
@@ -1809,8 +1797,8 @@ namespace GameKamiStreaming
 
             if (database != null && database.Stages.Count > 0)
             {
-                currentStageIndex = FindStageIndexByNumber(stageNumber);
-                currentStage = database.Stages[currentStageIndex];
+                var stageIndex = FindStageIndexByNumber(stageNumber);
+                stageManager.SelectByStageId(StageIdSpriteBase + Mathf.Max(1, stageNumber) - 1, stageIndex);
             }
 
             StartSelectedStageFromSkillTree();
@@ -1970,14 +1958,7 @@ namespace GameKamiStreaming
 
         void ClearActivePieces()
         {
-            for (var i = activePieces.Count - 1; i >= 0; i--)
-            {
-                if (activePieces[i] != null)
-                {
-                    Destroy(activePieces[i].gameObject);
-                }
-            }
-            activePieces.Clear();
+            pieceManager.Clear();
         }
 
         static string FormatRoundTime(int totalSeconds)
@@ -1990,7 +1971,7 @@ namespace GameKamiStreaming
         {
             CleanupDestroyedPieceRefs();
             SpawnBossForCurrentStageIfNeeded();
-            while (activePieces.Count < TargetPieceCount)
+            while (pieceManager.ActiveCount < TargetPieceCount)
             {
                 SpawnPieceAtRandomPosition();
             }
@@ -2027,8 +2008,8 @@ namespace GameKamiStreaming
             image.raycastTarget = false;
             image.preserveAspect = true;
             var view = pieceRoot.gameObject.AddComponent<DestructiblePieceView>();
-            view.Initialize(this, piece, LoadSprite(piece.imageId));
-            activePieces.Add(view);
+            view.Initialize(piece, LoadSprite(piece.imageId));
+            RegisterPieceView(view);
             BringActiveBossesToFront();
         }
 
@@ -2082,9 +2063,9 @@ namespace GameKamiStreaming
             }
 
             var view = bossRoot.gameObject.AddComponent<DestructiblePieceView>();
-            view.Initialize(this, bossPiece, idleSprite);
+            view.Initialize(bossPiece, idleSprite);
             image.preserveAspect = definition == null || definition.preserveAspect;
-            activePieces.Add(view);
+            RegisterPieceView(view);
             bossRoot.SetAsLastSibling();
 
             if (definition != null)
@@ -2112,6 +2093,7 @@ namespace GameKamiStreaming
 
         void BringActiveBossesToFront()
         {
+            var activePieces = pieceManager.ActivePieces;
             for (var i = 0; i < activePieces.Count; i++)
             {
                 var piece = activePieces[i];
@@ -2786,13 +2768,14 @@ namespace GameKamiStreaming
             }
 
             var damage = DamagePerSecond * MiningAttackFrameSeconds * Mathf.Max(1, miningAttackFrames.Count);
+            pieceManager.CleanupDestroyed();
+            var activePieces = pieceManager.ActivePieces;
 
             for (var i = activePieces.Count - 1; i >= 0; i--)
             {
                 var piece = activePieces[i];
                 if (piece == null || piece.IsDestroyed)
                 {
-                    activePieces.RemoveAt(i);
                     continue;
                 }
 
@@ -2805,13 +2788,14 @@ namespace GameKamiStreaming
 
         void CleanupDestroyedPieceRefs()
         {
-            for (var i = activePieces.Count - 1; i >= 0; i--)
-            {
-                if (activePieces[i] == null || activePieces[i].IsDestroyed)
-                {
-                    activePieces.RemoveAt(i);
-                }
-            }
+            pieceManager.CleanupDestroyed();
+        }
+
+        void RegisterPieceView(DestructiblePieceView view)
+        {
+            view.HitFeedbackRequested += PlayHitFeedback;
+            view.CollectionRequested += CollectPiece;
+            pieceManager.Register(view);
         }
 
         void PlayCollectBurst(RectTransform source, int resourceId)
@@ -2844,22 +2828,6 @@ namespace GameKamiStreaming
                 var offset = Random.insideUnitCircle * 26f;
                 var particle = AddAnchoredImage("Resource Score Fly", sprite, effectLayer, new Vector2(0.5f, 0.5f), new Vector2(0.5f, 0.5f), new Vector2(0.5f, 0.5f), startPosition + offset, new Vector2(52f, 52f));
                 StartCoroutine(FlyToScore(particle.rectTransform, targetPosition, i * 0.035f));
-            }
-        }
-
-        IEnumerator Pulse(RectTransform target)
-        {
-            if (target == null)
-            {
-                yield break;
-            }
-
-            var baseScale = target.localScale;
-            target.localScale = baseScale * 1.04f;
-            yield return new WaitForSeconds(0.04f);
-            if (target != null)
-            {
-                target.localScale = baseScale;
             }
         }
 
@@ -2935,17 +2903,6 @@ namespace GameKamiStreaming
             var b = Vector2.Lerp(control, end, t);
             return Vector2.Lerp(a, b, t);
         }
-        GameObject LoadEffectPrefab(string effectId)
-        {
-            var effect = database.GetEffect(effectId);
-            if (effect == null || string.IsNullOrWhiteSpace(effect.prefabPath))
-            {
-                return null;
-            }
-
-            return UnityEngine.Resources.Load<GameObject>(effect.prefabPath);
-        }
-
         static Image AddFullScreenImage(string name, Sprite sprite, RectTransform parent, Color color)
         {
             var image = AddAnchoredImage(name, sprite, parent, Vector2.zero, Vector2.one, new Vector2(0.5f, 0.5f), Vector2.zero, Vector2.zero);
