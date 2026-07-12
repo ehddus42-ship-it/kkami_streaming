@@ -43,12 +43,12 @@ namespace GameKamiStreaming
         const string BossFrameFormat = "000";
         static readonly string[] KkamiAppearSpriteIds =
         {
-            "img_love_01",
-            "img_confused_01",
-            "img_angry_01",
-            "img_superangry_01",
-            "img_shocked_01",
-            "img_sad_01"
+            "kkami_appear/love",
+            "kkami_appear/confused",
+            "kkami_appear/angry",
+            "kkami_appear/super_angry",
+            "kkami_appear/shocked",
+            "kkami_appear/sad"
         };
         static readonly Dictionary<int, BossDefinition> BossDefinitions = new Dictionary<int, BossDefinition>
         {
@@ -139,7 +139,7 @@ namespace GameKamiStreaming
                     hiddenDelay = 0.5f,
                     idleAnimation = new AnimationSource
                     {
-                        sheetPath = "GameKamiStreaming/Sprites/vfx_boss4_01",
+                        sheetPath = "GameKamiStreaming/Sprites/vfx_boss4_idle",
                         frameCount = 8
                     },
                     moveAnimation = new AnimationSource
@@ -152,6 +152,8 @@ namespace GameKamiStreaming
                         sheetPath = "GameKamiStreaming/Sprites/vfx_boss4_1_1",
                         frameCount = 16
                     },
+                    emergeDisplayScale = 2f,
+                    emergeDisplayOffsetY = 13f,
                     deathAnimation = new AnimationSource
                     {
                         sheetPath = "GameKamiStreaming/Sprites/vfx_boss4_02",
@@ -245,6 +247,8 @@ namespace GameKamiStreaming
             public BossPieceView.BossPattern pattern = BossPieceView.BossPattern.Move;
             public float disappearDelay;
             public float hiddenDelay;
+            public float emergeDisplayScale = 1f;
+            public float emergeDisplayOffsetY;
             public string fallbackImageId;
             public AnimationSource idleAnimation;
             public AnimationSource moveAnimation;
@@ -2087,6 +2091,8 @@ namespace GameKamiStreaming
                     definition.pattern,
                     definition.disappearDelay,
                     definition.hiddenDelay,
+                    definition.emergeDisplayScale,
+                    definition.emergeDisplayOffsetY,
                     definition.animateIdleWithMoveAnimation);
             }
         }

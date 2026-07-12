@@ -38,6 +38,9 @@ namespace GameKamiStreaming
         BossPattern pattern;
         float disappearDelaySeconds;
         float hiddenDelaySeconds;
+        float emergeDisplayScale = 1f;
+        float emergeDisplayOffsetY;
+        RectTransform displayRectTransform;
         Vector2 lastMoveDirection;
         int idleFrameIndex;
         bool animateIdleWithMoveAnimation;
@@ -60,6 +63,8 @@ namespace GameKamiStreaming
             BossPattern bossPattern,
             float disappearDelay,
             float hiddenDelay,
+            float emergeScale,
+            float emergeOffsetY,
             bool animateIdle)
         {
             movementArea = area;
@@ -77,8 +82,15 @@ namespace GameKamiStreaming
             pattern = bossPattern;
             disappearDelaySeconds = Mathf.Max(0f, disappearDelay);
             hiddenDelaySeconds = Mathf.Max(0f, hiddenDelay);
+            emergeDisplayScale = Mathf.Max(0.01f, emergeScale);
+            emergeDisplayOffsetY = emergeOffsetY;
             animateIdleWithMoveAnimation = animateIdle;
             rectTransform = transform as RectTransform;
+            if (!Mathf.Approximately(emergeDisplayScale, 1f) || !Mathf.Approximately(emergeDisplayOffsetY, 0f))
+            {
+                image = CreateDetachedDisplayImage(image);
+            }
+            displayRectTransform = image != null ? image.rectTransform : null;
             BringToFront();
 
             if (pieceView != null)
@@ -359,7 +371,9 @@ namespace GameKamiStreaming
 
                 BringToFront();
                 SetVisibleAndHittable(true);
+                SetDisplayTransform(emergeDisplayScale, emergeDisplayOffsetY);
                 yield return PlayFrames(emergeFrames, MoveFrameSeconds);
+                ResetDisplayTransform();
                 if (image != null && idleFrames != null && idleFrames.Count > 0)
                 {
                     image.sprite = idleFrames[0];
@@ -460,6 +474,7 @@ namespace GameKamiStreaming
             }
 
             defeated = true;
+            ResetDisplayTransform();
             if (image != null)
             {
                 var color = image.color;
@@ -521,6 +536,47 @@ namespace GameKamiStreaming
             {
                 rectTransform.SetAsLastSibling();
             }
+        }
+
+        Image CreateDetachedDisplayImage(Image source)
+        {
+            if (source == null || rectTransform == null)
+            {
+                return source;
+            }
+
+            var displayObject = new GameObject("Boss Display", typeof(RectTransform), typeof(CanvasRenderer), typeof(Image));
+            var displayRect = displayObject.transform as RectTransform;
+            displayRect.SetParent(rectTransform, false);
+            displayRect.anchorMin = Vector2.zero;
+            displayRect.anchorMax = Vector2.one;
+            displayRect.offsetMin = Vector2.zero;
+            displayRect.offsetMax = Vector2.zero;
+
+            var displayImage = displayObject.GetComponent<Image>();
+            displayImage.sprite = source.sprite;
+            displayImage.color = source.color;
+            displayImage.material = source.material;
+            displayImage.preserveAspect = source.preserveAspect;
+            displayImage.raycastTarget = false;
+            source.enabled = false;
+            return displayImage;
+        }
+
+        void SetDisplayTransform(float scale, float offsetY)
+        {
+            if (displayRectTransform == null)
+            {
+                return;
+            }
+
+            displayRectTransform.localScale = Vector3.one * scale;
+            displayRectTransform.anchoredPosition = new Vector2(0f, offsetY);
+        }
+
+        void ResetDisplayTransform()
+        {
+            SetDisplayTransform(1f, 0f);
         }
     }
 }
