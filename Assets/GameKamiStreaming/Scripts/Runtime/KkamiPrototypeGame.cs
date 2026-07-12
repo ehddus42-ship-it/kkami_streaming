@@ -26,6 +26,8 @@ namespace GameKamiStreaming
         const string MiningAttackSheetPath = "GameKamiStreaming/Sprites/vfx_kkami_01";
         const string MiningAttackFrameRoot = "GameKamiStreaming/Sprites/mining_attack/frame_";
         const float KkamiAppearIntervalSeconds = 5f;
+        const float ChatAppearIntervalSeconds = 2.2f;
+        const int MaxVisibleChatMessages = 7;
         const float SkillTreeContentSize = 4200f;
         const float SkillTreeMinZoom = 0.55f;
         const float SkillTreeMaxZoom = 2.5f;
@@ -192,6 +194,7 @@ namespace GameKamiStreaming
         readonly Dictionary<string, List<Sprite>> bossAnimationFrames = new Dictionary<string, List<Sprite>>();
         readonly List<Sprite> miningAttackFrames = new List<Sprite>();
         readonly List<Sprite> kkamiAppearSprites = new List<Sprite>();
+        readonly List<string> visibleChatMessages = new List<string>();
 
         [SerializeField] Camera uiCamera;
         [SerializeField] RectTransform canvasRoot;
@@ -214,6 +217,8 @@ namespace GameKamiStreaming
         [SerializeField] PixelNumberLabel stageNumberLabel;
         [SerializeField] Image miningAttackImage;
         [SerializeField] Image kkamiAppearImage;
+        [SerializeField] Image chattingAppearImage;
+        [SerializeField] Text chattingAppearText;
 
         KkamiTableDatabase database;
         GameResourceManager resourceManager;
@@ -224,6 +229,7 @@ namespace GameKamiStreaming
         int currentStageIndex => stageManager != null ? stageManager.CurrentIndex : 0;
         float roundRemainingSeconds;
         float kkamiAppearTimer;
+        float chatAppearTimer;
         float skillTreeZoom = 1f;
         Vector2 previousSkillTreePointerPosition;
         int lastKkamiAppearIndex = -1;
@@ -287,6 +293,7 @@ namespace GameKamiStreaming
 
             UpdateRoundTimer();
             UpdateKkamiAppear();
+            UpdateChattingAppear();
             UpdateMiningCursor();
             UpdateMiningAttack();
         }
@@ -396,6 +403,7 @@ namespace GameKamiStreaming
             EnsureSpawnPointReferences();
             EnsureMiningAttackView();
             EnsureKkamiAppearView();
+            EnsureChattingAppearView();
             EnsureRoundTimerLabel();
             EnsureStageIndicator();
             EnsureSkillTreeCanvas();
@@ -1083,6 +1091,121 @@ namespace GameKamiStreaming
             }
 
             kkamiAppearChanging = false;
+        }
+
+        void EnsureChattingAppearView()
+        {
+            var root = FindRectInGameCanvas("chatting appear");
+            if (root == null)
+            {
+                return;
+            }
+
+            var chattingCanvas = root.GetComponent<Canvas>();
+            if (chattingCanvas == null)
+            {
+                chattingCanvas = root.gameObject.AddComponent<Canvas>();
+            }
+            chattingCanvas.overrideSorting = true;
+            chattingCanvas.sortingOrder = 100;
+
+            chattingAppearImage = root.GetComponent<Image>();
+            if (chattingAppearImage == null)
+            {
+                chattingAppearImage = root.gameObject.AddComponent<Image>();
+            }
+
+            chattingAppearImage.sprite = LoadSprite("chatting");
+            chattingAppearImage.type = Image.Type.Simple;
+            chattingAppearImage.color = Color.white;
+            chattingAppearImage.preserveAspect = false;
+            chattingAppearImage.raycastTarget = false;
+
+            var textRect = root.Find("Chat Messages") as RectTransform;
+            if (textRect == null)
+            {
+                textRect = CreateRect("Chat Messages", root, new Vector2(0.18f, 0.16f), new Vector2(0.82f, 0.79f), new Vector2(0.5f, 0.5f), Vector2.zero, Vector2.zero);
+            }
+
+            chattingAppearText = textRect.GetComponent<Text>();
+            if (chattingAppearText == null)
+            {
+                chattingAppearText = textRect.gameObject.AddComponent<Text>();
+            }
+
+            chattingAppearText.font = LoadDefaultFont();
+            chattingAppearText.fontSize = 30;
+            chattingAppearText.resizeTextForBestFit = true;
+            chattingAppearText.resizeTextMinSize = 16;
+            chattingAppearText.resizeTextMaxSize = 30;
+            chattingAppearText.alignment = TextAnchor.UpperLeft;
+            chattingAppearText.horizontalOverflow = HorizontalWrapMode.Wrap;
+            chattingAppearText.verticalOverflow = VerticalWrapMode.Truncate;
+            chattingAppearText.color = new Color(0.22f, 0.09f, 0.30f, 0.96f);
+            chattingAppearText.raycastTarget = false;
+
+            visibleChatMessages.Clear();
+            chatAppearTimer = 0f;
+            AppendRandomChatMessage();
+        }
+
+        void UpdateChattingAppear()
+        {
+            if (chattingAppearText == null || database == null || database.Chats.Count == 0)
+            {
+                return;
+            }
+
+            chatAppearTimer -= Time.deltaTime;
+            if (chatAppearTimer <= 0f)
+            {
+                AppendRandomChatMessage();
+            }
+        }
+
+        void AppendRandomChatMessage()
+        {
+            if (chattingAppearText == null || database == null || database.Chats.Count == 0)
+            {
+                return;
+            }
+
+            var totalWeight = 0f;
+            for (var i = 0; i < database.Chats.Count; i++)
+            {
+                totalWeight += Mathf.Max(0f, database.Chats[i].spawnWeight);
+            }
+
+            var roll = totalWeight > 0f ? Random.value * totalWeight : Random.Range(0, database.Chats.Count);
+            var selected = database.Chats[database.Chats.Count - 1];
+            if (totalWeight > 0f)
+            {
+                for (var i = 0; i < database.Chats.Count; i++)
+                {
+                    roll -= Mathf.Max(0f, database.Chats[i].spawnWeight);
+                    if (roll <= 0f)
+                    {
+                        selected = database.Chats[i];
+                        break;
+                    }
+                }
+            }
+            else
+            {
+                selected = database.Chats[Mathf.Clamp((int)roll, 0, database.Chats.Count - 1)];
+            }
+
+            if (!string.IsNullOrWhiteSpace(selected.dialogue))
+            {
+                visibleChatMessages.Add(selected.dialogue);
+                while (visibleChatMessages.Count > MaxVisibleChatMessages)
+                {
+                    visibleChatMessages.RemoveAt(0);
+                }
+                chattingAppearText.text = string.Join("\n", visibleChatMessages);
+            }
+
+            chatAppearTimer = ChatAppearIntervalSeconds;
         }
 
         RectTransform FindRectInGameCanvas(string objectName)
@@ -1776,6 +1899,10 @@ namespace GameKamiStreaming
             skillTreeDragging = false;
             HideMiningAttack();
             ClearActivePieces();
+            if (chattingAppearImage != null)
+            {
+                chattingAppearImage.gameObject.SetActive(false);
+            }
 
             EnsureSkillTreeCanvas();
             ApplySkillTreeTransform();
@@ -1957,6 +2084,11 @@ namespace GameKamiStreaming
             if (skillTreeCanvasRoot != null)
             {
                 skillTreeCanvasRoot.gameObject.SetActive(false);
+            }
+
+            if (chattingAppearImage != null)
+            {
+                chattingAppearImage.gameObject.SetActive(true);
             }
         }
 
