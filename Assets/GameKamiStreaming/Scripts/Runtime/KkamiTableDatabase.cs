@@ -17,6 +17,7 @@ namespace GameKamiStreaming
         readonly Dictionary<int, ResourceRow> resourcesById = new Dictionary<int, ResourceRow>();
         readonly Dictionary<int, PieceRow> piecesById = new Dictionary<int, PieceRow>();
         readonly Dictionary<string, EffectRow> effectsById = new Dictionary<string, EffectRow>();
+        readonly Dictionary<string, string> skillDescriptionsById = new Dictionary<string, string>();
 
         public static KkamiTableDatabase Load()
         {
@@ -25,6 +26,7 @@ namespace GameKamiStreaming
             database.LoadPieces();
             database.LoadStages();
             database.LoadSkillTree();
+            database.LoadSkillDescriptions();
             database.LoadChats();
             database.LoadEffects();
             return database;
@@ -51,6 +53,17 @@ namespace GameKamiStreaming
 
             effectsById.TryGetValue(id, out var row);
             return row;
+        }
+
+        public string GetSkillDescription(string key)
+        {
+            if (string.IsNullOrWhiteSpace(key))
+            {
+                return string.Empty;
+            }
+
+            skillDescriptionsById.TryGetValue(key, out var description);
+            return description ?? string.Empty;
         }
 
         void LoadResources()
@@ -130,6 +143,7 @@ namespace GameKamiStreaming
                 SkillTree.Add(new SkillTreeRow
                 {
                     tileId = Int(row, "tile_id"),
+                    skillStringKey = Str(row, "skill_stringkey"),
                     reinforcedType = Int(row, "reinforced_int"),
                     upgradeRank = Int(row, "upgrade_rank"),
                     upAmount = Float(row, "up_int"),
@@ -146,6 +160,18 @@ namespace GameKamiStreaming
                     unlockPieceId = Int(row, "unlock_piece_id"),
                     unlockResourceId = Int(row, "unlock_resource_id")
                 });
+            }
+        }
+
+        void LoadSkillDescriptions()
+        {
+            foreach (var row in Read("stringkey").Rows)
+            {
+                var key = Str(row, "string_id");
+                if (!string.IsNullOrWhiteSpace(key))
+                {
+                    skillDescriptionsById[key] = Str(row, "skill_description");
+                }
             }
         }
 

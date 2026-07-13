@@ -11,7 +11,7 @@ internal static class Program
 {
     static readonly string[] DataSheets =
     {
-        "miner", "piece", "currency", "boss", "stage", "skilltree", "chat",
+        "miner", "piece", "currency", "boss", "stage", "skilltree", "stringkey", "chat",
         "res_img", "res_sfx", "res_vfx"
     };
 
@@ -183,9 +183,15 @@ internal static class Program
             {
                 Integer(Get(row, "tile_id")), Integer(Get(row, "upgrade_type")), Integer(Get(row, "upgrade_rank")), Number(Get(row, "increase_by")), Boolean(Get(row, "sub_use")),
                 Integer(Get(row, "follow_amount")), Integer(Get(row, "watch_amount")), Integer(Get(row, "love_amount")), Integer(Get(row, "donation_amount")),
-                Integer(Get(row, "reddonation_amount")), Integer(Get(row, "subscriber_amount")), ResolveImage(Get(row, "img_name_ID"), images), Get(row, "sfx_name_ID"), Get(row, "vfx_name_ID")
+                Integer(Get(row, "reddonation_amount")), Integer(Get(row, "subscriber_amount")), ResolveImage(Get(row, "img_name_ID"), images), Get(row, "sfx_name_ID"), Get(row, "vfx_name_ID"), Get(row, "skill_stringkey")
             }).ToList();
-        WriteCsv(Path.Combine(output, "skilltree.csv"), new[] { "tile_id", "reinforced_int", "upgrade_rank", "up_int", "sub_use", "follow_int", "watcher_int", "love_int", "donation_int", "reddonation_int", "subscriber_int", "image_id", "sound_id", "effect_id" }, skills);
+        WriteCsv(Path.Combine(output, "skilltree.csv"), new[] { "tile_id", "reinforced_int", "upgrade_rank", "up_int", "sub_use", "follow_int", "watcher_int", "love_int", "donation_int", "reddonation_int", "subscriber_int", "image_id", "sound_id", "effect_id", "skill_stringkey" }, skills);
+
+        var skillDescriptions = reader.Records("stringkey")
+            .Where(row => Get(row, "string_ID").Length > 0)
+            .Select(row => new object?[] { Get(row, "string_ID"), Get(row, "skill_description") })
+            .ToList();
+        WriteCsv(Path.Combine(output, "stringkey.csv"), new[] { "string_id", "skill_description" }, skillDescriptions);
 
         var chats = reader.Records("chat")
             .Where(row => Integer(Get(row, "chat_ID")) > 0)

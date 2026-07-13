@@ -48,6 +48,7 @@ namespace GameKamiStreaming
     public sealed class SkillTreeRow
     {
         public int tileId;
+        public string skillStringKey;
         public int reinforcedType;
         public int upgradeRank;
         public float upAmount;

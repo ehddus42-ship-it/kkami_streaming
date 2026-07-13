@@ -37,6 +37,30 @@ namespace GameKamiStreaming
             amountsByResourceId[resourceId] = nextAmount;
             AmountChanged?.Invoke(resourceId, nextAmount);
         }
+
+        public bool CanAfford(int resourceId, int amount)
+        {
+            return amount <= 0 || GetAmount(resourceId) >= amount;
+        }
+
+        public bool TrySpend(int resourceId, int amount)
+        {
+            if (amount <= 0)
+            {
+                return true;
+            }
+
+            var currentAmount = GetAmount(resourceId);
+            if (currentAmount < amount)
+            {
+                return false;
+            }
+
+            var nextAmount = currentAmount - amount;
+            amountsByResourceId[resourceId] = nextAmount;
+            AmountChanged?.Invoke(resourceId, nextAmount);
+            return true;
+        }
     }
 
     public sealed class GameStageManager
