@@ -25,6 +25,12 @@ namespace GameKamiStreaming
         const int MiningAttackFrameCount = 12;
         const string MiningAttackSheetPath = "GameKamiStreaming/Sprites/vfx_kkami_01";
         const string MiningAttackFrameRoot = "GameKamiStreaming/Sprites/mining_attack/frame_";
+        const string ManagerAnimationSheetPath = "GameKamiStreaming/Sprites/vfx_manager_01";
+        const int ManagerAnimationFrameCount = 12;
+        const float ManagerAnimationFrameSeconds = 0.065f;
+        const float ManagerDisplaySize = 150f;
+        const float ManagerDirectionOffsetDegrees = 20f;
+        const float ManagerBossOneSpeedFactor = 0.5f;
         const float KkamiAppearIntervalSeconds = 5f;
         const float ChatAppearIntervalSeconds = 2.2f;
         const int MaxVisibleChatMessages = 7;
@@ -38,6 +44,8 @@ namespace GameKamiStreaming
         const string SkillTreeInfoSpriteId = "skilltree_info";
         const string SkillTreeTestButtonSpriteId = "skilltree_button_test";
         const string SkillTreeUsedButtonSpriteId = "skilltree_button_used";
+        const string SkillTreeAvailableButtonSpriteId = "skilltree_button_available";
+        const string ManagerActivationSkillKey = "SD10116";
         const string NextStageButtonSpriteId = "next_stage_button";
         const string TemporaryStageJumpButtonGroupName = "Temporary Stage Jump Buttons";
         static readonly Dictionary<string, string> SkillTreeIconSpriteIds = new Dictionary<string, string>
@@ -231,6 +239,8 @@ namespace GameKamiStreaming
         readonly HashSet<string> completedSkillKeys = new HashSet<string>();
         readonly Dictionary<string, List<Sprite>> bossAnimationFrames = new Dictionary<string, List<Sprite>>();
         readonly List<Sprite> miningAttackFrames = new List<Sprite>();
+        readonly List<Sprite> managerAnimationFrames = new List<Sprite>();
+        readonly List<ManagerAgent> managerAgents = new List<ManagerAgent>();
         readonly List<Sprite> kkamiAppearSprites = new List<Sprite>();
         readonly List<string> visibleChatMessages = new List<string>();
         readonly Image[] bossKillPanels = new Image[BossKillPanelCount];
@@ -240,6 +250,7 @@ namespace GameKamiStreaming
         [SerializeField] RectTransform stageArea;
         [SerializeField] RectTransform pieceLayer;
         [SerializeField] RectTransform pieceDisplayLayer;
+        [SerializeField] RectTransform managerDisplayLayer;
         [SerializeField] RectTransform effectLayer;
         [SerializeField] RectTransform miningCursor;
         [SerializeField] PixelNumberLabel roundTimerLabel;
@@ -323,6 +334,16 @@ namespace GameKamiStreaming
             public int frameCount;
         }
 
+        sealed class ManagerAgent
+        {
+            public RectTransform rectTransform;
+            public Image image;
+            public Vector2 destination;
+            public bool launched;
+            public int frameIndex;
+            public float frameTimer;
+        }
+
         sealed class SkillTreePointerRelay : MonoBehaviour, IPointerEnterHandler, IPointerExitHandler, IPointerClickHandler
         {
             KkamiPrototypeGame owner;
@@ -384,6 +405,7 @@ namespace GameKamiStreaming
             UpdateKkamiAppear();
             UpdateChattingAppear();
             UpdateMiningCursor();
+            UpdateManagerAgents();
             UpdateMiningAttack();
         }
 
@@ -970,6 +992,51 @@ namespace GameKamiStreaming
             pieceDisplayLayer = CreateRect("Spawned Pieces", canvasRoot, Vector2.zero, Vector2.one, new Vector2(0.5f, 0.5f), Vector2.zero, Vector2.zero);
             var effectSibling = effectLayer != null ? effectLayer.GetSiblingIndex() : canvasRoot.childCount;
             pieceDisplayLayer.SetSiblingIndex(Mathf.Max(0, effectSibling));
+        }
+
+        void EnsureManagerDisplayLayer()
+        {
+            EnsurePieceDisplayLayer();
+            if (canvasRoot == null)
+            {
+                return;
+            }
+
+            if (managerDisplayLayer == null)
+            {
+                managerDisplayLayer = canvasRoot.Find("Manager Display Layer") as RectTransform;
+            }
+
+            if (managerDisplayLayer == null)
+            {
+                managerDisplayLayer = CreateRect("Manager Display Layer", canvasRoot, Vector2.zero, Vector2.one, new Vector2(0.5f, 0.5f), Vector2.zero, Vector2.zero);
+            }
+
+            managerDisplayLayer.SetParent(canvasRoot, false);
+            managerDisplayLayer.anchorMin = Vector2.zero;
+            managerDisplayLayer.anchorMax = Vector2.one;
+            managerDisplayLayer.pivot = new Vector2(0.5f, 0.5f);
+            managerDisplayLayer.anchoredPosition = Vector2.zero;
+            managerDisplayLayer.sizeDelta = Vector2.zero;
+            managerDisplayLayer.localScale = Vector3.one;
+            if (pieceDisplayLayer != null)
+            {
+                managerDisplayLayer.SetSiblingIndex(Mathf.Min(canvasRoot.childCount - 1, pieceDisplayLayer.GetSiblingIndex() + 1));
+            }
+        }
+
+        void LoadManagerAnimationFrames()
+        {
+            if (managerAnimationFrames.Count > 0)
+            {
+                return;
+            }
+
+            managerAnimationFrames.AddRange(LoadAnimationFrames(new AnimationSource
+            {
+                sheetPath = ManagerAnimationSheetPath,
+                frameCount = ManagerAnimationFrameCount
+            }, new Vector2(0.5f, 0.5f)));
         }
 
         void EnsureSpawnPointReferences()
@@ -2079,7 +2146,12 @@ namespace GameKamiStreaming
             var image = rect.GetComponent<Image>();
             if (image != null)
             {
-                image.sprite = LoadSprite(IsSkillCompleted(row) ? SkillTreeUsedButtonSpriteId : SkillTreeTestButtonSpriteId);
+                var spriteId = IsSkillCompleted(row)
+                    ? SkillTreeUsedButtonSpriteId
+                    : IsSkillPurchasable(row)
+                        ? SkillTreeAvailableButtonSpriteId
+                        : SkillTreeTestButtonSpriteId;
+                image.sprite = LoadSprite(spriteId);
                 image.type = Image.Type.Simple;
                 image.preserveAspect = true;
                 image.raycastTarget = true;
@@ -2102,6 +2174,19 @@ namespace GameKamiStreaming
 
             var rect = FindChildRect(skillTreeContentRoot, row.skillStringKey);
             ApplySkillTreeButtonState(rect, row);
+        }
+
+        void RefreshSkillTreeButtonStates()
+        {
+            if (skillTreeContentRoot == null)
+            {
+                return;
+            }
+
+            foreach (var row in skillTreeRowsByKey.Values)
+            {
+                RefreshSkillTreeButton(row);
+            }
         }
 
         void ConfigureSkillTreeIcon(RectTransform skillButton, string skillKey)
@@ -2261,7 +2346,9 @@ namespace GameKamiStreaming
             {
                 if (skillTreeTooltipCostText != null)
                 {
-                    skillTreeTooltipCostText.text = "이전 강화 완료 필요";
+                    skillTreeTooltipCostText.text = RequiresManagerActivation(row) && !IsManagerActivationComplete()
+                        ? "SD10116 매니저 활성화 강화 필요"
+                        : "이전 강화 완료 필요";
                 }
                 return;
             }
@@ -2278,7 +2365,7 @@ namespace GameKamiStreaming
             SpendSkillCosts(row);
             ApplySkillEffect(row);
             completedSkillKeys.Add(row.skillStringKey);
-            RefreshSkillTreeButton(row);
+            RefreshSkillTreeButtonStates();
 
             if (skillTreeTooltipDescriptionText != null)
             {
@@ -2288,7 +2375,17 @@ namespace GameKamiStreaming
 
         bool HasSkillPrerequisite(SkillTreeRow row)
         {
-            if (row == null || row.upgradeRank <= 1 || database == null)
+            if (row == null)
+            {
+                return false;
+            }
+
+            if (RequiresManagerActivation(row) && !IsManagerActivationComplete())
+            {
+                return false;
+            }
+
+            if (row.upgradeRank <= 1 || database == null)
             {
                 return true;
             }
@@ -2306,6 +2403,22 @@ namespace GameKamiStreaming
             return true;
         }
 
+        static bool RequiresManagerActivation(SkillTreeRow row)
+        {
+            if (row == null || string.IsNullOrWhiteSpace(row.skillStringKey))
+            {
+                return false;
+            }
+
+            return string.CompareOrdinal(row.skillStringKey, "SD10117") >= 0 &&
+                string.CompareOrdinal(row.skillStringKey, "SD10128") <= 0;
+        }
+
+        bool IsManagerActivationComplete()
+        {
+            return completedSkillKeys.Contains(ManagerActivationSkillKey);
+        }
+
         bool CanAffordSkill(SkillTreeRow row)
         {
             return resourceManager != null &&
@@ -2315,6 +2428,11 @@ namespace GameKamiStreaming
                 resourceManager.CanAfford(20004, row.donationCost) &&
                 resourceManager.CanAfford(20005, row.redDonationCost) &&
                 resourceManager.CanAfford(20006, row.subscriberCost);
+        }
+
+        bool IsSkillPurchasable(SkillTreeRow row)
+        {
+            return row != null && !IsSkillCompleted(row) && HasSkillPrerequisite(row) && CanAffordSkill(row);
         }
 
         void SpendSkillCosts(SkillTreeRow row)
@@ -2404,6 +2522,7 @@ namespace GameKamiStreaming
 
         void StartManagerRoutine()
         {
+            EnsureManagerAgents();
             if (managerRoutine == null)
             {
                 managerRoutine = StartCoroutine(ManagerLoop());
@@ -2422,13 +2541,20 @@ namespace GameKamiStreaming
                     continue;
                 }
 
+                EnsureManagerAgents();
                 pieceManager.CleanupDestroyed();
-                for (var i = 0; i < managerCount; i++)
+                for (var i = 0; i < managerAgents.Count; i++)
                 {
-                    var target = FindManagerTarget();
+                    var manager = managerAgents[i];
+                    if (manager == null || !manager.launched || manager.rectTransform == null)
+                    {
+                        continue;
+                    }
+
+                    var target = FindManagerTarget(manager.rectTransform.anchoredPosition);
                     if (target == null)
                     {
-                        break;
+                        continue;
                     }
 
                     var damage = DamagePerSecond * MiningAttackFrameSeconds * Mathf.Max(1, miningAttackFrames.Count) * managerDamageMultiplier;
@@ -2439,7 +2565,189 @@ namespace GameKamiStreaming
             managerRoutine = null;
         }
 
-        DestructiblePieceView FindManagerTarget()
+        void UpdateManagerAgents()
+        {
+            if (skillTreeOpen || managerCount <= 0)
+            {
+                SetManagerDisplayVisible(false);
+                return;
+            }
+
+            EnsureManagerAgents();
+            SetManagerDisplayVisible(true);
+            TryLaunchManagerAgents();
+
+            var moveSpeed = GetManagerMoveSpeed();
+            for (var i = 0; i < managerAgents.Count; i++)
+            {
+                var manager = managerAgents[i];
+                if (manager == null || manager.rectTransform == null)
+                {
+                    continue;
+                }
+
+                if (manager.launched)
+                {
+                    manager.rectTransform.anchoredPosition = Vector2.MoveTowards(
+                        manager.rectTransform.anchoredPosition,
+                        manager.destination,
+                        moveSpeed * Time.deltaTime);
+                }
+
+                UpdateManagerAnimation(manager);
+            }
+        }
+
+        void EnsureManagerAgents()
+        {
+            if (managerCount <= 0)
+            {
+                return;
+            }
+
+            EnsureManagerDisplayLayer();
+            LoadManagerAnimationFrames();
+            if (managerDisplayLayer == null)
+            {
+                return;
+            }
+
+            SetManagerDisplayVisible(!skillTreeOpen);
+
+            while (managerAgents.Count < managerCount)
+            {
+                var root = CreateRect("Manager " + (managerAgents.Count + 1), managerDisplayLayer, new Vector2(0.5f, 0.5f), new Vector2(0.5f, 0.5f), new Vector2(0.5f, 0.5f), Vector2.zero, new Vector2(ManagerDisplaySize, ManagerDisplaySize));
+                var image = root.gameObject.AddComponent<Image>();
+                image.sprite = managerAnimationFrames.Count > 0 ? managerAnimationFrames[0] : LoadSprite("img_manager_01");
+                image.color = Color.white;
+                image.preserveAspect = true;
+                image.raycastTarget = false;
+                root.SetAsLastSibling();
+                managerAgents.Add(new ManagerAgent
+                {
+                    rectTransform = root,
+                    image = image
+                });
+            }
+
+            while (managerAgents.Count > managerCount)
+            {
+                var lastIndex = managerAgents.Count - 1;
+                var manager = managerAgents[lastIndex];
+                if (manager != null && manager.rectTransform != null)
+                {
+                    Destroy(manager.rectTransform.gameObject);
+                }
+                managerAgents.RemoveAt(lastIndex);
+            }
+        }
+
+        void TryLaunchManagerAgents()
+        {
+            if (!TryGetCurrentMiningPosition(out var startPosition) || !TryGetSpawnPolygon(out var spawnPolygon))
+            {
+                return;
+            }
+
+            var center = GetCentroid(spawnPolygon);
+            var toCenter = center - startPosition;
+            var distance = toCenter.magnitude;
+            var baseDirection = distance > 0.001f ? toCenter / distance : Vector2.up;
+            distance = Mathf.Max(distance, 1f);
+
+            for (var i = 0; i < managerAgents.Count; i++)
+            {
+                var manager = managerAgents[i];
+                if (manager == null || manager.launched || manager.rectTransform == null)
+                {
+                    continue;
+                }
+
+                var direction = RotateVector(baseDirection, GetManagerDirectionOffset(i));
+                manager.rectTransform.anchoredPosition = startPosition;
+                manager.destination = startPosition + direction * distance;
+                manager.launched = true;
+                manager.rectTransform.SetAsLastSibling();
+            }
+        }
+
+        bool TryGetCurrentMiningPosition(out Vector2 position)
+        {
+            position = Vector2.zero;
+            return miningCursor != null &&
+                miningCursor.gameObject.activeInHierarchy &&
+                TryGetPointerPosition(out var pointerPosition) &&
+                IsPointerInsideMiningArea(pointerPosition) &&
+                RectTransformUtility.ScreenPointToLocalPointInRectangle(pieceDisplayLayer, pointerPosition, uiCamera, out position);
+        }
+
+        static float GetManagerDirectionOffset(int managerIndex)
+        {
+            if (managerIndex == 1)
+            {
+                return -ManagerDirectionOffsetDegrees;
+            }
+
+            return managerIndex == 2 ? ManagerDirectionOffsetDegrees : 0f;
+        }
+
+        static Vector2 RotateVector(Vector2 vector, float degrees)
+        {
+            return Quaternion.Euler(0f, 0f, degrees) * vector;
+        }
+
+        float GetManagerMoveSpeed()
+        {
+            var bossOneSpeed = 190f * 1.8f;
+            if (BossDefinitions.TryGetValue(30001, out var bossOneDefinition) && bossOneDefinition != null)
+            {
+                bossOneSpeed = bossOneDefinition.moveStepDistance / Mathf.Max(0.01f, bossOneDefinition.moveInterval);
+            }
+
+            return bossOneSpeed * ManagerBossOneSpeedFactor * managerSpeedMultiplier;
+        }
+
+        void UpdateManagerAnimation(ManagerAgent manager)
+        {
+            if (manager == null || manager.image == null || managerAnimationFrames.Count == 0)
+            {
+                return;
+            }
+
+            manager.frameTimer += Time.deltaTime;
+            if (manager.frameTimer < ManagerAnimationFrameSeconds)
+            {
+                return;
+            }
+
+            manager.image.sprite = managerAnimationFrames[manager.frameIndex % managerAnimationFrames.Count];
+            manager.frameIndex++;
+            manager.frameTimer = 0f;
+        }
+
+        void ResetManagerAgents()
+        {
+            for (var i = 0; i < managerAgents.Count; i++)
+            {
+                var manager = managerAgents[i];
+                if (manager != null && manager.rectTransform != null)
+                {
+                    Destroy(manager.rectTransform.gameObject);
+                }
+            }
+
+            managerAgents.Clear();
+        }
+
+        void SetManagerDisplayVisible(bool visible)
+        {
+            if (managerDisplayLayer != null)
+            {
+                managerDisplayLayer.gameObject.SetActive(visible);
+            }
+        }
+
+        DestructiblePieceView FindManagerTarget(Vector2 managerPosition)
         {
             if (pieceManager == null)
             {
@@ -2451,7 +2759,7 @@ namespace GameKamiStreaming
             for (var i = 0; i < activePieces.Count; i++)
             {
                 var piece = activePieces[i];
-                if (piece != null && !piece.IsDestroyed && piece.IsHittable && CircleOverlapsRect(Vector2.zero, range, piece.RectTransform))
+                if (piece != null && !piece.IsDestroyed && piece.IsHittable && CircleOverlapsRect(managerPosition, range, piece.RectTransform))
                 {
                     return piece;
                 }
@@ -2511,6 +2819,7 @@ namespace GameKamiStreaming
         void HandleResourceAmountChanged(int resourceId, int amount)
         {
             RefreshResourceLabels(resourceId);
+            RefreshSkillTreeButtonStates();
         }
 
         void RefreshResourceLabels(int resourceId)
@@ -2600,6 +2909,7 @@ namespace GameKamiStreaming
             skillTreeDragging = false;
             HideMiningAttack();
             ClearActivePieces();
+            SetManagerDisplayVisible(false);
             if (chattingAppearImage != null)
             {
                 chattingAppearImage.gameObject.SetActive(false);
@@ -2643,6 +2953,8 @@ namespace GameKamiStreaming
             ApplyCurrentStageSprite();
             RefreshStageNumberLabel();
             ResetRoundTimer();
+            ResetManagerAgents();
+            SetManagerDisplayVisible(managerCount > 0);
             FillStagePieces();
         }
 
