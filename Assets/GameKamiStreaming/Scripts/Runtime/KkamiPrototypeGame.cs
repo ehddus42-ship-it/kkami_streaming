@@ -1134,10 +1134,10 @@ namespace GameKamiStreaming
             }
 
             chattingAppearText.font = LoadDefaultFont();
-            chattingAppearText.fontSize = 30;
+            chattingAppearText.fontSize = 90;
             chattingAppearText.resizeTextForBestFit = true;
             chattingAppearText.resizeTextMinSize = 16;
-            chattingAppearText.resizeTextMaxSize = 30;
+            chattingAppearText.resizeTextMaxSize = 90;
             chattingAppearText.alignment = TextAnchor.UpperLeft;
             chattingAppearText.horizontalOverflow = HorizontalWrapMode.Wrap;
             chattingAppearText.verticalOverflow = VerticalWrapMode.Truncate;
