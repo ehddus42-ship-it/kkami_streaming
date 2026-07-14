@@ -20,7 +20,7 @@ namespace GameKamiStreaming
         const float FixedGameAspectRatio = 16f / 9f;
         static readonly Vector2 FixedGameReferenceResolution = new Vector2(1920f, 1080f);
         const int TargetPieceCount = 12;
-        const float BasePieceSpawnIntervalSeconds = 0.45f;
+        const float BasePieceSpawnIntervalSeconds = 0.30f;
         static readonly Color SkillTreeBackdropBaseColor = new Color(0.5f, 0.5f, 0.5f, 1f);
         static readonly Color SkillTreeContentBackgroundColor = Color.clear;
         const float MiningRadius = 120f;
