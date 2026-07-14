@@ -144,6 +144,7 @@ namespace GameKamiStreaming
                 {
                     tileId = Int(row, "tile_id"),
                     skillStringKey = Str(row, "skill_stringkey"),
+                    skillName = Str(row, "skill_name"),
                     reinforcedType = Int(row, "reinforced_int"),
                     upgradeRank = Int(row, "upgrade_rank"),
                     upAmount = Float(row, "up_int"),

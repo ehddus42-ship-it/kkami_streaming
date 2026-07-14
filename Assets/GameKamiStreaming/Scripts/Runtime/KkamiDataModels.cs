@@ -49,6 +49,7 @@ namespace GameKamiStreaming
     {
         public int tileId;
         public string skillStringKey;
+        public string skillName;
         public int reinforcedType;
         public int upgradeRank;
         public float upAmount;

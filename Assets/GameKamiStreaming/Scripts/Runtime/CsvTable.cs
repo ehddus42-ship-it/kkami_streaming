@@ -17,7 +17,12 @@ namespace GameKamiStreaming
                 return table;
             }
 
-            table.Headers.AddRange(records[0]);
+            foreach (var header in records[0])
+            {
+                // Unity TextAsset keeps the UTF-8 BOM, which would otherwise make the
+                // first CSV header (for example "string_id") impossible to look up.
+                table.Headers.Add(header.Trim().TrimStart('\ufeff'));
+            }
             for (var r = 1; r < records.Count; r++)
             {
                 if (records[r].Count == 0)
@@ -30,7 +35,7 @@ namespace GameKamiStreaming
                 for (var c = 0; c < table.Headers.Count; c++)
                 {
                     var value = c < records[r].Count ? records[r][c].Trim() : string.Empty;
-                    row[table.Headers[c].Trim()] = value;
+                    row[table.Headers[c]] = value;
                     hasValue |= !string.IsNullOrWhiteSpace(value);
                 }
 

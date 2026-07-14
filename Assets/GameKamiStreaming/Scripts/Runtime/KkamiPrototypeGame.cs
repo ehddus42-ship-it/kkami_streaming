@@ -287,6 +287,9 @@ namespace GameKamiStreaming
         TextMeshProUGUI skillTreeTooltipTitleText;
         TextMeshProUGUI skillTreeTooltipDescriptionText;
         TextMeshProUGUI skillTreeTooltipCostText;
+        Text skillTreeTooltipTitleLegacyText;
+        Text skillTreeTooltipDescriptionLegacyText;
+        Text skillTreeTooltipCostLegacyText;
         [SerializeField] RectTransform stageIndicatorRoot;
         [SerializeField] Button startNextStageButton;
         [SerializeField] RectTransform spawnPoint1;
@@ -1159,7 +1162,7 @@ namespace GameKamiStreaming
 
         Button BuildNextStageButton(RectTransform parent)
         {
-            var buttonRoot = CreateRect("Start Next Stage Button", parent, new Vector2(1f, 0f), new Vector2(1f, 0f), new Vector2(1f, 0f), new Vector2(-56f, 56f), new Vector2(430f, 430f));
+            var buttonRoot = CreateRect("Start Next Stage Button", parent, new Vector2(1f, 0f), new Vector2(1f, 0f), new Vector2(1f, 0f), new Vector2(-56f, 56f), new Vector2(215f, 215f));
             var image = buttonRoot.gameObject.AddComponent<Image>();
             image.sprite = LoadSprite(NextStageButtonSpriteId);
             image.color = Color.white;
@@ -2224,7 +2227,7 @@ namespace GameKamiStreaming
                 rect.anchorMax = new Vector2(1f, 0f);
                 rect.pivot = new Vector2(1f, 0f);
                 rect.anchoredPosition = new Vector2(-56f, 56f);
-                rect.sizeDelta = new Vector2(430f, 430f);
+                rect.sizeDelta = new Vector2(215f, 215f);
                 rect.localScale = Vector3.one;
                 rect.SetAsLastSibling();
             }
@@ -2647,9 +2650,15 @@ namespace GameKamiStreaming
             image.sprite = LoadSprite(SkillTreeInfoSpriteId);
             image.preserveAspect = true;
             image.raycastTarget = false;
-            skillTreeTooltipTitleText = FindChildRect(skillTreeTooltipRoot, "Title")?.GetComponent<TextMeshProUGUI>();
-            skillTreeTooltipDescriptionText = FindChildRect(skillTreeTooltipRoot, "Description")?.GetComponent<TextMeshProUGUI>();
-            skillTreeTooltipCostText = FindChildRect(skillTreeTooltipRoot, "Cost")?.GetComponent<TextMeshProUGUI>();
+            var titleRect = FindChildRect(skillTreeTooltipRoot, "Title");
+            var descriptionRect = FindChildRect(skillTreeTooltipRoot, "Description");
+            var costRect = FindChildRect(skillTreeTooltipRoot, "Cost");
+            skillTreeTooltipTitleText = titleRect?.GetComponent<TextMeshProUGUI>();
+            skillTreeTooltipDescriptionText = descriptionRect?.GetComponent<TextMeshProUGUI>();
+            skillTreeTooltipCostText = costRect?.GetComponent<TextMeshProUGUI>();
+            skillTreeTooltipTitleLegacyText = titleRect?.GetComponent<Text>();
+            skillTreeTooltipDescriptionLegacyText = descriptionRect?.GetComponent<Text>();
+            skillTreeTooltipCostLegacyText = costRect?.GetComponent<Text>();
             skillTreeTooltipRoot.gameObject.SetActive(false);
         }
 
@@ -2673,33 +2682,37 @@ namespace GameKamiStreaming
         {
             if (row == null)
             {
-                if (skillTreeTooltipTitleText != null) skillTreeTooltipTitleText.text = "TEST SKILL";
-                if (skillTreeTooltipDescriptionText != null) skillTreeTooltipDescriptionText.text = "테스트 스킬";
-                if (skillTreeTooltipCostText != null) skillTreeTooltipCostText.text = "COST 0";
+                SetSkillTreeTooltipText(skillTreeTooltipTitleText, skillTreeTooltipTitleLegacyText, "TEST SKILL");
+                SetSkillTreeTooltipText(skillTreeTooltipDescriptionText, skillTreeTooltipDescriptionLegacyText, "테스트 스킬");
+                SetSkillTreeTooltipText(skillTreeTooltipCostText, skillTreeTooltipCostLegacyText, "COST 0");
                 return;
             }
 
-            if (skillTreeTooltipTitleText != null)
+            SetSkillTreeTooltipText(skillTreeTooltipTitleText, skillTreeTooltipTitleLegacyText, string.IsNullOrWhiteSpace(row.skillName) ? "스킬 강화" : row.skillName);
+
+            var description = database.GetSkillDescription(row.skillStringKey);
+            SetSkillTreeTooltipText(skillTreeTooltipDescriptionText, skillTreeTooltipDescriptionLegacyText, string.IsNullOrWhiteSpace(description) ? "효과 정보 없음" : description);
+
+            var costs = new List<string>();
+            AddSkillTreeCost(costs, row.followCost, 20001);
+            AddSkillTreeCost(costs, row.watcherCost, 20002);
+            AddSkillTreeCost(costs, row.loveCost, 20003);
+            AddSkillTreeCost(costs, row.donationCost, 20004);
+            AddSkillTreeCost(costs, row.redDonationCost, 20005);
+            AddSkillTreeCost(costs, row.subscriberCost, 20006);
+            SetSkillTreeTooltipText(skillTreeTooltipCostText, skillTreeTooltipCostLegacyText, costs.Count > 0 ? string.Join(" / ", costs.ToArray()) : "COST 0");
+        }
+
+        static void SetSkillTreeTooltipText(TextMeshProUGUI tmpText, Text legacyText, string value)
+        {
+            if (tmpText != null)
             {
-                skillTreeTooltipTitleText.text = row.skillStringKey;
+                tmpText.text = value;
             }
 
-            if (skillTreeTooltipDescriptionText != null)
+            if (legacyText != null)
             {
-                var description = database.GetSkillDescription(row.skillStringKey);
-                skillTreeTooltipDescriptionText.text = string.IsNullOrWhiteSpace(description) ? "효과 정보 없음" : description;
-            }
-
-            if (skillTreeTooltipCostText != null)
-            {
-                var costs = new List<string>();
-                AddSkillTreeCost(costs, row.followCost, 20001);
-                AddSkillTreeCost(costs, row.watcherCost, 20002);
-                AddSkillTreeCost(costs, row.loveCost, 20003);
-                AddSkillTreeCost(costs, row.donationCost, 20004);
-                AddSkillTreeCost(costs, row.redDonationCost, 20005);
-                AddSkillTreeCost(costs, row.subscriberCost, 20006);
-                skillTreeTooltipCostText.text = costs.Count > 0 ? string.Join(" / ", costs.ToArray()) : "COST 0";
+                legacyText.text = value;
             }
         }
 
@@ -2725,21 +2738,15 @@ namespace GameKamiStreaming
             ShowSkillTreeTooltip(row);
             if (!HasSkillPrerequisite(row))
             {
-                if (skillTreeTooltipCostText != null)
-                {
-                    skillTreeTooltipCostText.text = RequiresManagerActivation(row) && !IsManagerActivationComplete()
-                        ? "SD10116 매니저 활성화 강화 필요"
-                        : "이전 강화 완료 필요";
-                }
+                SetSkillTreeTooltipText(skillTreeTooltipCostText, skillTreeTooltipCostLegacyText, RequiresManagerActivation(row) && !IsManagerActivationComplete()
+                    ? "매니저 활성화 강화 필요"
+                    : "이전 강화 완료 필요");
                 return;
             }
 
             if (!CanAffordSkill(row))
             {
-                if (skillTreeTooltipCostText != null)
-                {
-                    skillTreeTooltipCostText.text = "재화 부족";
-                }
+                SetSkillTreeTooltipText(skillTreeTooltipCostText, skillTreeTooltipCostLegacyText, "재화 부족");
                 return;
             }
 
@@ -2748,10 +2755,10 @@ namespace GameKamiStreaming
             completedSkillKeys.Add(row.skillStringKey);
             RefreshSkillTreeButtonStates();
 
-            if (skillTreeTooltipDescriptionText != null)
-            {
-                skillTreeTooltipDescriptionText.text += "\n강화 완료";
-            }
+            var completedDescription = (skillTreeTooltipDescriptionText != null
+                ? skillTreeTooltipDescriptionText.text
+                : skillTreeTooltipDescriptionLegacyText != null ? skillTreeTooltipDescriptionLegacyText.text : string.Empty) + "\n강화 완료";
+            SetSkillTreeTooltipText(skillTreeTooltipDescriptionText, skillTreeTooltipDescriptionLegacyText, completedDescription);
         }
 
         bool HasSkillPrerequisite(SkillTreeRow row)
@@ -3558,9 +3565,13 @@ namespace GameKamiStreaming
         {
             CleanupDestroyedPieceRefs();
             SpawnBossForCurrentStageIfNeeded();
-            while (pieceManager.ActiveCount < TargetPieceCount)
+            var spawnAttemptsRemaining = TargetPieceCount * 4;
+            while (pieceManager.ActiveCount < TargetPieceCount && spawnAttemptsRemaining-- > 0)
             {
-                SpawnPieceAtRandomPosition();
+                if (!SpawnPieceAtRandomPosition())
+                {
+                    break;
+                }
             }
         }
 
@@ -3576,18 +3587,21 @@ namespace GameKamiStreaming
             FillStagePieces();
         }
 
-        void SpawnPieceAtRandomPosition()
+        bool SpawnPieceAtRandomPosition()
         {
             var piece = PickPiece();
             if (piece == null)
             {
-                return;
+                return false;
             }
 
             var size = Random.Range(155f, 215f) * SpawnPieceSizeScale;
             var half = size * 0.5f;
             EnsurePieceDisplayLayer();
-            var displayPosition = PickSpawnPosition(half);
+            if (!TryPickSpawnPosition(half, out var displayPosition))
+            {
+                return false;
+            }
             var pieceRoot = CreateRect(piece.pieceName, pieceDisplayLayer, new Vector2(0.5f, 0.5f), new Vector2(0.5f, 0.5f), new Vector2(0.5f, 0.5f), displayPosition, new Vector2(size, size));
             pieceRoot.localRotation = Quaternion.identity;
             pieceRoot.localScale = Vector3.one;
@@ -3598,6 +3612,7 @@ namespace GameKamiStreaming
             view.Initialize(piece, LoadSprite(piece.imageId));
             RegisterPieceView(view);
             BringActiveBossesToFront();
+            return true;
         }
 
         void SpawnBossForCurrentStageIfNeeded()
@@ -3613,12 +3628,15 @@ namespace GameKamiStreaming
                 return;
             }
 
-            currentStageBossSpawned = true;
             BossDefinitions.TryGetValue(bossPiece.pieceId, out var definition);
             var size = definition != null ? definition.size : 260f;
             var half = size * 0.5f;
             EnsurePieceDisplayLayer();
-            var displayPosition = PickSpawnPosition(half);
+            if (!TryPickSpawnPosition(half, out var displayPosition))
+            {
+                return;
+            }
+            currentStageBossSpawned = true;
             var bossRoot = CreateRect(bossPiece.pieceName, pieceDisplayLayer, new Vector2(0.5f, 0.5f), new Vector2(0.5f, 0.5f), new Vector2(0.5f, 0.5f), displayPosition, new Vector2(size, size));
             bossRoot.localRotation = Quaternion.identity;
             bossRoot.localScale = Vector3.one;
@@ -3811,8 +3829,9 @@ namespace GameKamiStreaming
             }
         }
 
-        Vector2 PickSpawnPosition(float halfSize)
+        bool TryPickSpawnPosition(float halfSize, out Vector2 position)
         {
+            position = Vector2.zero;
             if (TryGetSpawnPolygon(out var polygon))
             {
                 var centroid = GetCentroid(polygon);
@@ -3821,22 +3840,37 @@ namespace GameKamiStreaming
                     var candidate = SamplePointInPolygon(polygon);
                     if (IsPieceInsidePolygon(candidate, halfSize, polygon))
                     {
-                        return candidate;
+                        position = candidate;
+                        return true;
                     }
                 }
 
                 if (TryFindGridSpawnPosition(polygon, halfSize, centroid, out var gridCandidate))
                 {
-                    return gridCandidate;
+                    position = gridCandidate;
+                    return true;
                 }
 
-                return IsPointInsideConvexPolygon(centroid, polygon) ? centroid : polygon[0];
+                return false;
+            }
+
+            if (pieceLayer == null || pieceDisplayLayer == null)
+            {
+                return false;
             }
 
             var rect = pieceLayer.rect;
-            var anchoredPosition = new Vector2(Random.Range(rect.xMin + halfSize, rect.xMax - halfSize), Random.Range(rect.yMin + halfSize, rect.yMax - halfSize));
+            var min = new Vector2(rect.xMin + halfSize, rect.yMin + halfSize);
+            var max = new Vector2(rect.xMax - halfSize, rect.yMax - halfSize);
+            if (min.x > max.x || min.y > max.y)
+            {
+                return false;
+            }
+
+            var anchoredPosition = new Vector2(Random.Range(min.x, max.x), Random.Range(min.y, max.y));
             var worldPosition = pieceLayer.TransformPoint(anchoredPosition);
-            return (Vector2)pieceDisplayLayer.InverseTransformPoint(worldPosition);
+            position = (Vector2)pieceDisplayLayer.InverseTransformPoint(worldPosition);
+            return true;
         }
 
         public bool TryGetBossRandomPosition(RectTransform bossTransform, out Vector2 position)
@@ -3855,7 +3889,10 @@ namespace GameKamiStreaming
 
             for (var i = 0; i < 32; i++)
             {
-                var candidate = PickSpawnPosition(halfSize);
+                if (!TryPickSpawnPosition(halfSize, out var candidate))
+                {
+                    continue;
+                }
                 var distance = Vector2.Distance(currentPosition, candidate);
                 if (distance >= minimumDistance)
                 {
