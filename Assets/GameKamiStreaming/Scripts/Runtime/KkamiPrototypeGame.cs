@@ -20,6 +20,9 @@ namespace GameKamiStreaming
         const float FixedGameAspectRatio = 16f / 9f;
         static readonly Vector2 FixedGameReferenceResolution = new Vector2(1920f, 1080f);
         const int TargetPieceCount = 12;
+        const float BasePieceSpawnIntervalSeconds = 0.45f;
+        static readonly Color SkillTreeBackdropBaseColor = new Color(0.5f, 0.5f, 0.5f, 1f);
+        static readonly Color SkillTreeContentBackgroundColor = Color.clear;
         const float MiningRadius = 120f;
         const float DamagePerSecond = 7f;
         const float PieceHitboxInsetRatio = 0.24f;
@@ -41,6 +44,7 @@ namespace GameKamiStreaming
         const float ChatAppearIntervalSeconds = 2.2f;
         const int MaxVisibleChatMessages = 7;
         const float SkillTreeContentSize = 4200f;
+        const float InitialSkillTreeZoom = 0.6f;
         const float SkillTreeMinZoom = 0.55f;
         const float SkillTreeMaxZoom = 2.5f;
         const float SkillTreeZoomStep = 0.18f;
@@ -255,7 +259,7 @@ namespace GameKamiStreaming
         readonly Dictionary<int, PixelNumberLabel> resourceLabels = new Dictionary<int, PixelNumberLabel>();
         readonly Dictionary<int, PixelNumberLabel> skillTreeResourceLabels = new Dictionary<int, PixelNumberLabel>();
         readonly Dictionary<string, SkillTreeRow> skillTreeRowsByKey = new Dictionary<string, SkillTreeRow>();
-        readonly HashSet<string> completedSkillKeys = new HashSet<string>();
+        readonly Dictionary<string, int> skillUpgradeCounts = new Dictionary<string, int>();
         readonly Dictionary<string, List<Sprite>> bossAnimationFrames = new Dictionary<string, List<Sprite>>();
         readonly List<Sprite> miningAttackFrames = new List<Sprite>();
         readonly List<Sprite> managerAnimationFrames = new List<Sprite>();
@@ -314,7 +318,7 @@ namespace GameKamiStreaming
         float roundRemainingSeconds;
         float kkamiAppearTimer;
         float chatAppearTimer;
-        float skillTreeZoom = 1f;
+        float skillTreeZoom = InitialSkillTreeZoom;
         Vector2 previousSkillTreePointerPosition;
         int lastKkamiAppearIndex = -1;
         int displayedRoundSecond = -1;
@@ -339,6 +343,7 @@ namespace GameKamiStreaming
         float managerRangeMultiplier = 1f;
         float managerDamageMultiplier = 1f;
         float managerSpeedMultiplier = 1f;
+        Coroutine pieceSpawnRoutine;
         Coroutine managerRoutine;
         int lastScreenWidth;
         int lastScreenHeight;
@@ -430,6 +435,7 @@ namespace GameKamiStreaming
             if (gameStarted && !skillTreeOpen)
             {
                 FillStagePieces();
+                StartPieceSpawnRoutine();
             }
         }
 
@@ -500,7 +506,6 @@ namespace GameKamiStreaming
             resourceManager.Add(piece.resourceId, amount);
 
             PlayCollectBurst(source, piece.resourceId);
-            StartCoroutine(RespawnAfterDelay(0.45f / Mathf.Max(0.01f, pieceSpawnSpeedMultiplier)));
         }
 
         public void EnsureEditableStartScreen()
@@ -520,9 +525,9 @@ namespace GameKamiStreaming
             }
         }
 
-        public void PlayHitFeedback(RectTransform source, string effectId)
+        public void PlayHitFeedback(RectTransform source, string effectId, bool holdAtReducedScale)
         {
-            effectManager.PlayHitFeedback(source, effectId);
+            effectManager.PlayHitFeedback(source, effectId, holdAtReducedScale);
         }
 
         void InitializeGame()
@@ -1143,12 +1148,13 @@ namespace GameKamiStreaming
             ConfigureCanvasScaler(scaler);
 
             var root = canvas.transform as RectTransform;
+            AddFullScreenImage("Skill Tree Backdrop Base", null, root, SkillTreeBackdropBaseColor);
             var backdrop = AddFullScreenImage("Skill Tree Backdrop", LoadSprite(SkillTreeBackgroundSpriteId), root, Color.white);
             ConfigureSkillTreeBackdrop(backdrop);
 
             skillTreeContentRoot = CreateRect("Skill Tree Empty Fields", root, new Vector2(0.5f, 0.5f), new Vector2(0.5f, 0.5f), new Vector2(0.5f, 0.5f), Vector2.zero, new Vector2(SkillTreeContentSize, SkillTreeContentSize));
             var panelImage = skillTreeContentRoot.gameObject.AddComponent<Image>();
-            panelImage.color = new Color(0.12f, 0.13f, 0.16f, 0.92f);
+            panelImage.color = SkillTreeContentBackgroundColor;
             panelImage.raycastTarget = false;
 
             BuildSkillTreeResourceWallet(root);
@@ -2085,6 +2091,27 @@ namespace GameKamiStreaming
                 return;
             }
 
+            var baseRect = FindChildRect(skillTreeCanvasRoot, "Skill Tree Backdrop Base");
+            if (baseRect == null)
+            {
+                baseRect = AddFullScreenImage("Skill Tree Backdrop Base", null, skillTreeCanvasRoot, SkillTreeBackdropBaseColor).rectTransform;
+            }
+
+            baseRect.SetParent(skillTreeCanvasRoot, false);
+            baseRect.anchorMin = Vector2.zero;
+            baseRect.anchorMax = Vector2.one;
+            baseRect.pivot = new Vector2(0.5f, 0.5f);
+            baseRect.anchoredPosition = Vector2.zero;
+            baseRect.sizeDelta = Vector2.zero;
+            baseRect.SetAsFirstSibling();
+            var baseImage = baseRect.GetComponent<Image>();
+            if (baseImage != null)
+            {
+                baseImage.sprite = null;
+                baseImage.color = SkillTreeBackdropBaseColor;
+                baseImage.raycastTarget = false;
+            }
+
             var backdropRect = FindChildRect(skillTreeCanvasRoot, "Skill Tree Backdrop");
             if (backdropRect == null)
             {
@@ -2098,7 +2125,7 @@ namespace GameKamiStreaming
             backdropRect.pivot = new Vector2(0.5f, 0.5f);
             backdropRect.anchoredPosition = Vector2.zero;
             backdropRect.sizeDelta = Vector2.zero;
-            backdropRect.SetAsFirstSibling();
+            backdropRect.SetSiblingIndex(Mathf.Min(1, skillTreeCanvasRoot.childCount - 1));
 
             var backdrop = backdropRect.GetComponent<Image>();
             if (backdrop != null)
@@ -2127,7 +2154,7 @@ namespace GameKamiStreaming
                 fitter = backdrop.gameObject.AddComponent<AspectRatioFitter>();
             }
 
-            fitter.aspectMode = AspectRatioFitter.AspectMode.EnvelopeParent;
+            fitter.aspectMode = AspectRatioFitter.AspectMode.FitInParent;
             fitter.aspectRatio = sprite != null && sprite.rect.height > 0f ? sprite.rect.width / sprite.rect.height : 16f / 9f;
         }
 
@@ -2151,7 +2178,7 @@ namespace GameKamiStreaming
             {
                 skillTreeContentRoot = CreateRect("Skill Tree Empty Fields", skillTreeCanvasRoot, new Vector2(0.5f, 0.5f), new Vector2(0.5f, 0.5f), new Vector2(0.5f, 0.5f), Vector2.zero, new Vector2(SkillTreeContentSize, SkillTreeContentSize));
                 var image = skillTreeContentRoot.gameObject.AddComponent<Image>();
-                image.color = new Color(0.12f, 0.13f, 0.16f, 0.92f);
+                image.color = SkillTreeContentBackgroundColor;
             }
 
             skillTreeContentRoot.SetParent(skillTreeCanvasRoot, false);
@@ -2164,7 +2191,7 @@ namespace GameKamiStreaming
             var imageComponent = skillTreeContentRoot.GetComponent<Image>();
             if (imageComponent != null)
             {
-                imageComponent.color = new Color(0.12f, 0.13f, 0.16f, 0.92f);
+                imageComponent.color = SkillTreeContentBackgroundColor;
                 imageComponent.raycastTarget = false;
             }
 
@@ -2517,7 +2544,22 @@ namespace GameKamiStreaming
 
         bool IsSkillCompleted(SkillTreeRow row)
         {
-            return row != null && !string.IsNullOrWhiteSpace(row.skillStringKey) && completedSkillKeys.Contains(row.skillStringKey);
+            return row != null && GetSkillUpgradeCount(row) >= GetSkillUpgradeLimit(row);
+        }
+
+        int GetSkillUpgradeCount(SkillTreeRow row)
+        {
+            if (row == null || string.IsNullOrWhiteSpace(row.skillStringKey))
+            {
+                return 0;
+            }
+
+            return skillUpgradeCounts.TryGetValue(row.skillStringKey, out var count) ? count : 0;
+        }
+
+        static int GetSkillUpgradeLimit(SkillTreeRow row)
+        {
+            return Mathf.Max(1, row != null ? row.upgradeCount : 1);
         }
 
         void ApplySkillTreeButtonState(RectTransform rect, SkillTreeRow row)
@@ -2691,15 +2733,27 @@ namespace GameKamiStreaming
             SetSkillTreeTooltipText(skillTreeTooltipTitleText, skillTreeTooltipTitleLegacyText, string.IsNullOrWhiteSpace(row.skillName) ? "스킬 강화" : row.skillName);
 
             var description = database.GetSkillDescription(row.skillStringKey);
-            SetSkillTreeTooltipText(skillTreeTooltipDescriptionText, skillTreeTooltipDescriptionLegacyText, string.IsNullOrWhiteSpace(description) ? "효과 정보 없음" : description);
+            var upgradeCount = GetSkillUpgradeCount(row);
+            var upgradeLimit = GetSkillUpgradeLimit(row);
+            var progress = IsSkillCompleted(row)
+                ? "강화 완료 (" + upgradeLimit + "/" + upgradeLimit + ")"
+                : "강화 횟수 " + upgradeCount + "/" + upgradeLimit;
+            var descriptionText = string.IsNullOrWhiteSpace(description) ? "효과 정보 없음" : description;
+            SetSkillTreeTooltipText(skillTreeTooltipDescriptionText, skillTreeTooltipDescriptionLegacyText, descriptionText + "\n" + progress);
+
+            if (IsSkillCompleted(row))
+            {
+                SetSkillTreeTooltipText(skillTreeTooltipCostText, skillTreeTooltipCostLegacyText, "강화 완료");
+                return;
+            }
 
             var costs = new List<string>();
-            AddSkillTreeCost(costs, row.followCost, 20001);
-            AddSkillTreeCost(costs, row.watcherCost, 20002);
-            AddSkillTreeCost(costs, row.loveCost, 20003);
-            AddSkillTreeCost(costs, row.donationCost, 20004);
-            AddSkillTreeCost(costs, row.redDonationCost, 20005);
-            AddSkillTreeCost(costs, row.subscriberCost, 20006);
+            AddSkillTreeCost(costs, GetCurrentSkillCost(row, row.followCost), 20001);
+            AddSkillTreeCost(costs, GetCurrentSkillCost(row, row.watcherCost), 20002);
+            AddSkillTreeCost(costs, GetCurrentSkillCost(row, row.loveCost), 20003);
+            AddSkillTreeCost(costs, GetCurrentSkillCost(row, row.donationCost), 20004);
+            AddSkillTreeCost(costs, GetCurrentSkillCost(row, row.redDonationCost), 20005);
+            AddSkillTreeCost(costs, GetCurrentSkillCost(row, row.subscriberCost), 20006);
             SetSkillTreeTooltipText(skillTreeTooltipCostText, skillTreeTooltipCostLegacyText, costs.Count > 0 ? string.Join(" / ", costs.ToArray()) : "COST 0");
         }
 
@@ -2752,13 +2806,9 @@ namespace GameKamiStreaming
 
             SpendSkillCosts(row);
             ApplySkillEffect(row);
-            completedSkillKeys.Add(row.skillStringKey);
+            skillUpgradeCounts[row.skillStringKey] = GetSkillUpgradeCount(row) + 1;
             RefreshSkillTreeButtonStates();
-
-            var completedDescription = (skillTreeTooltipDescriptionText != null
-                ? skillTreeTooltipDescriptionText.text
-                : skillTreeTooltipDescriptionLegacyText != null ? skillTreeTooltipDescriptionLegacyText.text : string.Empty) + "\n강화 완료";
-            SetSkillTreeTooltipText(skillTreeTooltipDescriptionText, skillTreeTooltipDescriptionLegacyText, completedDescription);
+            SetSkillTreeTooltipContent(row);
         }
 
         bool HasSkillPrerequisite(SkillTreeRow row)
@@ -2804,33 +2854,50 @@ namespace GameKamiStreaming
 
         bool IsManagerActivationComplete()
         {
-            return completedSkillKeys.Contains(ManagerActivationSkillKey);
+            return skillUpgradeCounts.TryGetValue(ManagerActivationSkillKey, out var count) && count > 0;
         }
 
         bool CanAffordSkill(SkillTreeRow row)
         {
             return resourceManager != null &&
-                resourceManager.CanAfford(20001, row.followCost) &&
-                resourceManager.CanAfford(20002, row.watcherCost) &&
-                resourceManager.CanAfford(20003, row.loveCost) &&
-                resourceManager.CanAfford(20004, row.donationCost) &&
-                resourceManager.CanAfford(20005, row.redDonationCost) &&
-                resourceManager.CanAfford(20006, row.subscriberCost);
+                resourceManager.CanAfford(20001, GetCurrentSkillCost(row, row.followCost)) &&
+                resourceManager.CanAfford(20002, GetCurrentSkillCost(row, row.watcherCost)) &&
+                resourceManager.CanAfford(20003, GetCurrentSkillCost(row, row.loveCost)) &&
+                resourceManager.CanAfford(20004, GetCurrentSkillCost(row, row.donationCost)) &&
+                resourceManager.CanAfford(20005, GetCurrentSkillCost(row, row.redDonationCost)) &&
+                resourceManager.CanAfford(20006, GetCurrentSkillCost(row, row.subscriberCost));
+        }
+
+        bool IsSkillAvailable(SkillTreeRow row)
+        {
+            return row != null && !IsSkillCompleted(row) && HasSkillPrerequisite(row);
         }
 
         bool IsSkillPurchasable(SkillTreeRow row)
         {
-            return row != null && !IsSkillCompleted(row) && HasSkillPrerequisite(row) && CanAffordSkill(row);
+            return IsSkillAvailable(row) && CanAffordSkill(row);
         }
 
         void SpendSkillCosts(SkillTreeRow row)
         {
-            resourceManager.TrySpend(20001, row.followCost);
-            resourceManager.TrySpend(20002, row.watcherCost);
-            resourceManager.TrySpend(20003, row.loveCost);
-            resourceManager.TrySpend(20004, row.donationCost);
-            resourceManager.TrySpend(20005, row.redDonationCost);
-            resourceManager.TrySpend(20006, row.subscriberCost);
+            resourceManager.TrySpend(20001, GetCurrentSkillCost(row, row.followCost));
+            resourceManager.TrySpend(20002, GetCurrentSkillCost(row, row.watcherCost));
+            resourceManager.TrySpend(20003, GetCurrentSkillCost(row, row.loveCost));
+            resourceManager.TrySpend(20004, GetCurrentSkillCost(row, row.donationCost));
+            resourceManager.TrySpend(20005, GetCurrentSkillCost(row, row.redDonationCost));
+            resourceManager.TrySpend(20006, GetCurrentSkillCost(row, row.subscriberCost));
+        }
+
+        int GetCurrentSkillCost(SkillTreeRow row, int baseCost)
+        {
+            if (baseCost <= 0)
+            {
+                return 0;
+            }
+
+            var upgradeCount = Mathf.Clamp(GetSkillUpgradeCount(row), 0, 30);
+            var inflatedCost = (long)baseCost * (1L << upgradeCount);
+            return inflatedCost >= int.MaxValue ? int.MaxValue : (int)inflatedCost;
         }
 
         void ApplySkillEffect(SkillTreeRow row)
@@ -2930,6 +2997,7 @@ namespace GameKamiStreaming
                 }
 
                 EnsureManagerAgents();
+                SpawnManagerWave();
                 pieceManager.CleanupDestroyed();
                 for (var i = 0; i < managerAgents.Count; i++)
                 {
@@ -2963,14 +3031,14 @@ namespace GameKamiStreaming
 
             EnsureManagerAgents();
             SetManagerDisplayVisible(true);
-            TryLaunchManagerAgents();
 
             var moveSpeed = GetManagerMoveSpeed();
-            for (var i = 0; i < managerAgents.Count; i++)
+            for (var i = managerAgents.Count - 1; i >= 0; i--)
             {
                 var manager = managerAgents[i];
                 if (manager == null || manager.rectTransform == null)
                 {
+                    managerAgents.RemoveAt(i);
                     continue;
                 }
 
@@ -2980,6 +3048,13 @@ namespace GameKamiStreaming
                         manager.rectTransform.anchoredPosition,
                         manager.destination,
                         moveSpeed * Time.deltaTime);
+
+                    if (Vector2.Distance(manager.rectTransform.anchoredPosition, manager.destination) <= 0.01f)
+                    {
+                        Destroy(manager.rectTransform.gameObject);
+                        managerAgents.RemoveAt(i);
+                        continue;
+                    }
                 }
 
                 UpdateManagerAnimation(manager);
@@ -3002,9 +3077,28 @@ namespace GameKamiStreaming
 
             SetManagerDisplayVisible(!skillTreeOpen);
 
-            while (managerAgents.Count < managerCount)
+        }
+
+        void SpawnManagerWave()
+        {
+            if (!TryGetCurrentMiningPosition(out var startPosition) || !TryGetSpawnPolygon(out var spawnPolygon))
             {
-                var root = CreateRect("Manager " + (managerAgents.Count + 1), managerDisplayLayer, new Vector2(0.5f, 0.5f), new Vector2(0.5f, 0.5f), new Vector2(0.5f, 0.5f), Vector2.zero, new Vector2(ManagerDisplaySize, ManagerDisplaySize));
+                return;
+            }
+
+            var center = GetCentroid(spawnPolygon);
+            var toCenter = center - startPosition;
+            var baseDirection = toCenter.sqrMagnitude > 0.001f ? toCenter.normalized : Vector2.up;
+
+            for (var i = 0; i < managerCount; i++)
+            {
+                var direction = RotateVector(baseDirection, GetManagerDirectionOffset(i));
+                if (!TryGetManagerExitPosition(startPosition, direction, spawnPolygon, out var destination))
+                {
+                    continue;
+                }
+
+                var root = CreateRect("Manager", managerDisplayLayer, new Vector2(0.5f, 0.5f), new Vector2(0.5f, 0.5f), new Vector2(0.5f, 0.5f), startPosition, new Vector2(ManagerDisplaySize, ManagerDisplaySize));
                 var image = root.gameObject.AddComponent<Image>();
                 image.sprite = managerAnimationFrames.Count > 0 ? managerAnimationFrames[0] : LoadSprite("img_manager_01");
                 image.color = Color.white;
@@ -3014,49 +3108,31 @@ namespace GameKamiStreaming
                 managerAgents.Add(new ManagerAgent
                 {
                     rectTransform = root,
-                    image = image
+                    image = image,
+                    destination = destination,
+                    launched = true
                 });
-            }
-
-            while (managerAgents.Count > managerCount)
-            {
-                var lastIndex = managerAgents.Count - 1;
-                var manager = managerAgents[lastIndex];
-                if (manager != null && manager.rectTransform != null)
-                {
-                    Destroy(manager.rectTransform.gameObject);
-                }
-                managerAgents.RemoveAt(lastIndex);
             }
         }
 
-        void TryLaunchManagerAgents()
+        static bool TryGetManagerExitPosition(Vector2 startPosition, Vector2 direction, Vector2[] spawnPolygon, out Vector2 destination)
         {
-            if (!TryGetCurrentMiningPosition(out var startPosition) || !TryGetSpawnPolygon(out var spawnPolygon))
+            destination = startPosition;
+            if (spawnPolygon == null || spawnPolygon.Length < 3 || direction.sqrMagnitude <= 0.001f)
             {
-                return;
+                return false;
             }
 
-            var center = GetCentroid(spawnPolygon);
-            var toCenter = center - startPosition;
-            var distance = toCenter.magnitude;
-            var baseDirection = distance > 0.001f ? toCenter / distance : Vector2.up;
-            distance = Mathf.Max(distance, 1f);
-
-            for (var i = 0; i < managerAgents.Count; i++)
+            GetPolygonBounds(spawnPolygon, out var min, out var max);
+            var maximumDistance = Vector2.Distance(min, max) * 2f;
+            var travelDistance = FindMaxInsideTravelDistance(startPosition, direction.normalized, maximumDistance, 0f, spawnPolygon);
+            if (travelDistance <= 1f)
             {
-                var manager = managerAgents[i];
-                if (manager == null || manager.launched || manager.rectTransform == null)
-                {
-                    continue;
-                }
-
-                var direction = RotateVector(baseDirection, GetManagerDirectionOffset(i));
-                manager.rectTransform.anchoredPosition = startPosition;
-                manager.destination = startPosition + direction * distance;
-                manager.launched = true;
-                manager.rectTransform.SetAsLastSibling();
+                return false;
             }
+
+            destination = startPosition + direction.normalized * travelDistance;
+            return true;
         }
 
         bool TryGetCurrentMiningPosition(out Vector2 position)
@@ -3346,6 +3422,7 @@ namespace GameKamiStreaming
             ResetManagerAgents();
             SetManagerDisplayVisible(managerCount > 0);
             FillStagePieces();
+            StartPieceSpawnRoutine();
         }
 
         void StartStageFromSkillTree(int stageNumber)
@@ -3374,6 +3451,7 @@ namespace GameKamiStreaming
             ResetManagerAgents();
             SetManagerDisplayVisible(managerCount > 0);
             FillStagePieces();
+            StartPieceSpawnRoutine();
         }
 
         int FindStageIndexByNumber(int stageNumber)
@@ -3575,16 +3653,39 @@ namespace GameKamiStreaming
             }
         }
 
-        IEnumerator RespawnAfterDelay(float delay)
+        void StartPieceSpawnRoutine()
         {
-            yield return new WaitForSeconds(delay);
-            if (skillTreeOpen)
+            if (pieceSpawnRoutine == null)
             {
-                yield break;
+                pieceSpawnRoutine = StartCoroutine(PieceSpawnLoop());
             }
+        }
 
-            CleanupDestroyedPieceRefs();
-            FillStagePieces();
+        IEnumerator PieceSpawnLoop()
+        {
+            var elapsed = 0f;
+            while (true)
+            {
+                yield return null;
+
+                if (!gameStarted || skillTreeOpen || endingVideoPlaying || currentStage == null)
+                {
+                    elapsed = 0f;
+                    continue;
+                }
+
+                elapsed += Time.deltaTime;
+                var spawnInterval = BasePieceSpawnIntervalSeconds / Mathf.Max(0.01f, pieceSpawnSpeedMultiplier);
+                if (elapsed < spawnInterval)
+                {
+                    continue;
+                }
+
+                elapsed %= spawnInterval;
+                CleanupDestroyedPieceRefs();
+                SpawnBossForCurrentStageIfNeeded();
+                SpawnPieceAtRandomPosition();
+            }
         }
 
         bool SpawnPieceAtRandomPosition()
@@ -3598,6 +3699,8 @@ namespace GameKamiStreaming
             var size = Random.Range(155f, 215f) * SpawnPieceSizeScale;
             var half = size * 0.5f;
             EnsurePieceDisplayLayer();
+            // Overlap is intentional: spawn validation only checks the configured
+            // boundary and never rejects a position occupied by another piece.
             if (!TryPickSpawnPosition(half, out var displayPosition))
             {
                 return false;
@@ -3630,9 +3733,14 @@ namespace GameKamiStreaming
 
             BossDefinitions.TryGetValue(bossPiece.pieceId, out var definition);
             var size = definition != null ? definition.size : 260f;
-            var half = size * 0.5f;
+            // Large bosses can intentionally use a smaller movement footprint than
+            // their visual size. Use the same footprint for their initial spawn so
+            // they are not rejected simply because the artwork is larger than the
+            // configured spawn polygon (notably boss 5).
+            var boundsScale = definition != null ? Mathf.Clamp(definition.moveBoundsScale, 0.1f, 1f) : 1f;
+            var half = size * 0.5f * boundsScale;
             EnsurePieceDisplayLayer();
-            if (!TryPickSpawnPosition(half, out var displayPosition))
+            if (!TryPickSpawnPosition(half, out var displayPosition) && !TryGetSpawnCenter(out displayPosition))
             {
                 return;
             }
@@ -3869,6 +3977,25 @@ namespace GameKamiStreaming
 
             var anchoredPosition = new Vector2(Random.Range(min.x, max.x), Random.Range(min.y, max.y));
             var worldPosition = pieceLayer.TransformPoint(anchoredPosition);
+            position = (Vector2)pieceDisplayLayer.InverseTransformPoint(worldPosition);
+            return true;
+        }
+
+        bool TryGetSpawnCenter(out Vector2 position)
+        {
+            position = Vector2.zero;
+            if (TryGetSpawnPolygon(out var polygon))
+            {
+                position = GetCentroid(polygon);
+                return true;
+            }
+
+            if (pieceLayer == null || pieceDisplayLayer == null)
+            {
+                return false;
+            }
+
+            var worldPosition = pieceLayer.TransformPoint(pieceLayer.rect.center);
             position = (Vector2)pieceDisplayLayer.InverseTransformPoint(worldPosition);
             return true;
         }

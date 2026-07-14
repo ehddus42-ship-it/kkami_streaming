@@ -17,7 +17,7 @@ namespace GameKamiStreaming
         public PieceRow Piece => piece;
         public RectTransform RectTransform => transform as RectTransform;
         public event System.Action<DestructiblePieceView> Defeated;
-        public event System.Action<RectTransform, string> HitFeedbackRequested;
+        public event System.Action<RectTransform, string, bool> HitFeedbackRequested;
         public event System.Action<PieceRow, RectTransform> CollectionRequested;
 
         public void Initialize(PieceRow row, Sprite sprite)
@@ -47,9 +47,10 @@ namespace GameKamiStreaming
             }
 
             hp = Mathf.Max(0f, hp - Mathf.Max(0f, damage));
+            var collectAfterShrink = hp <= 0f && !deathHandledExternally;
             if (playFeedback)
             {
-                HitFeedbackRequested?.Invoke(transform as RectTransform, piece.effectId);
+                HitFeedbackRequested?.Invoke(transform as RectTransform, piece.effectId, collectAfterShrink);
             }
 
             if (hp <= 0f)
@@ -61,9 +62,27 @@ namespace GameKamiStreaming
                     return;
                 }
 
-                RequestCollection();
-                Destroy(gameObject);
+                if (playFeedback)
+                {
+                    StartCoroutine(CollectAfterHitShrink());
+                }
+                else
+                {
+                    CollectAndDestroy();
+                }
             }
+        }
+
+        System.Collections.IEnumerator CollectAfterHitShrink()
+        {
+            yield return new WaitForSeconds(GameEffectManager.HitShrinkDurationSeconds);
+            CollectAndDestroy();
+        }
+
+        void CollectAndDestroy()
+        {
+            RequestCollection();
+            Destroy(gameObject);
         }
 
         public void RequestCollection()

@@ -52,6 +52,7 @@ namespace GameKamiStreaming
         public string skillName;
         public int reinforcedType;
         public int upgradeRank;
+        public int upgradeCount;
         public float upAmount;
         public bool useSubscription;
         public int followCost;

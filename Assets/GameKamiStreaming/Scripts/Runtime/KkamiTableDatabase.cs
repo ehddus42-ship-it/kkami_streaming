@@ -147,6 +147,7 @@ namespace GameKamiStreaming
                     skillName = Str(row, "skill_name"),
                     reinforcedType = Int(row, "reinforced_int"),
                     upgradeRank = Int(row, "upgrade_rank"),
+                    upgradeCount = Mathf.Max(1, Int(row, "upgrade_count")),
                     upAmount = Float(row, "up_int"),
                     useSubscription = Bool(row, "sub_use"),
                     followCost = Int(row, "follow_int"),

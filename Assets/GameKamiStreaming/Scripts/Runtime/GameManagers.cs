@@ -140,10 +140,13 @@ namespace GameKamiStreaming
 
     public sealed class GameEffectManager
     {
+        public const float HitShrinkDurationSeconds = 0.035f;
+
         readonly MonoBehaviour coroutineHost;
         readonly KkamiTableDatabase database;
         readonly RectTransform effectLayer;
         readonly Dictionary<string, GameObject> prefabsByEffectId = new Dictionary<string, GameObject>();
+        readonly HashSet<RectTransform> pulsingTargets = new HashSet<RectTransform>();
 
         public GameEffectManager(MonoBehaviour host, KkamiTableDatabase tableDatabase, RectTransform layer)
         {
@@ -152,16 +155,19 @@ namespace GameKamiStreaming
             effectLayer = layer;
         }
 
-        public void PlayHitFeedback(RectTransform source, string effectId)
+        public void PlayHitFeedback(RectTransform source, string effectId, bool holdAtReducedScale)
         {
             var prefab = LoadPrefab(effectId);
-            if (prefab != null)
+            if (prefab != null && source != null)
             {
                 UnityEngine.Object.Instantiate(prefab, source.position, Quaternion.identity, effectLayer);
             }
-            else
+
+            // Every piece and boss gets the same non-stacking hit response. Ignore
+            // overlapping requests so a rapid stream of hits can never accumulate scale.
+            if (source != null && pulsingTargets.Add(source))
             {
-                coroutineHost.StartCoroutine(Pulse(source));
+                coroutineHost.StartCoroutine(Pulse(source, holdAtReducedScale));
             }
         }
 
@@ -185,20 +191,62 @@ namespace GameKamiStreaming
             return prefab;
         }
 
-        static IEnumerator Pulse(RectTransform target)
+        IEnumerator Pulse(RectTransform target, bool holdAtReducedScale)
         {
             if (target == null)
             {
+                pulsingTargets.Remove(target);
                 yield break;
             }
 
             var baseScale = target.localScale;
-            target.localScale = baseScale * 1.04f;
-            yield return new WaitForSeconds(0.04f);
+            var reducedScale = baseScale * 0.94f;
+            const float restoreSeconds = 0.065f;
+            var elapsed = 0f;
+            while (elapsed < HitShrinkDurationSeconds)
+            {
+                if (target == null)
+                {
+                    pulsingTargets.Remove(target);
+                    yield break;
+                }
+
+                elapsed += Time.deltaTime;
+                target.localScale = Vector3.Lerp(baseScale, reducedScale, Mathf.Clamp01(elapsed / HitShrinkDurationSeconds));
+                yield return null;
+            }
+
+            if (holdAtReducedScale)
+            {
+                if (target != null)
+                {
+                    target.localScale = reducedScale;
+                }
+
+                pulsingTargets.Remove(target);
+                yield break;
+            }
+
+            elapsed = 0f;
+            while (elapsed < restoreSeconds)
+            {
+                if (target == null)
+                {
+                    pulsingTargets.Remove(target);
+                    yield break;
+                }
+
+                elapsed += Time.deltaTime;
+                target.localScale = Vector3.Lerp(reducedScale, baseScale, Mathf.SmoothStep(0f, 1f, Mathf.Clamp01(elapsed / restoreSeconds)));
+                yield return null;
+            }
+
             if (target != null)
             {
                 target.localScale = baseScale;
             }
+
+            pulsingTargets.Remove(target);
         }
     }
 }

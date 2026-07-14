@@ -181,11 +181,11 @@ internal static class Program
             .Where(row => Integer(Get(row, "tile_id")) > 0)
             .Select(row => new object?[]
             {
-                Integer(Get(row, "tile_id")), Integer(Get(row, "upgrade_type")), Integer(Get(row, "upgrade_rank")), Number(Get(row, "increase_by")), Boolean(Get(row, "sub_use")),
+                Integer(Get(row, "tile_id")), Integer(Get(row, "upgrade_type")), Integer(Get(row, "upgrade_rank")), Integer(Get(row, "upgrade_count")), Number(Get(row, "increase_by")), Boolean(Get(row, "sub_use")),
                 Integer(Get(row, "follow_amount")), Integer(Get(row, "watch_amount")), Integer(Get(row, "love_amount")), Integer(Get(row, "donation_amount")),
                 Integer(Get(row, "reddonation_amount")), Integer(Get(row, "subscriber_amount")), ResolveImage(Get(row, "img_name_ID"), images), Get(row, "sfx_name_ID"), Get(row, "vfx_name_ID"), Get(row, "skill_stringkey"), Get(row, "skill_name")
             }).ToList();
-        WriteCsv(Path.Combine(output, "skilltree.csv"), new[] { "tile_id", "reinforced_int", "upgrade_rank", "up_int", "sub_use", "follow_int", "watcher_int", "love_int", "donation_int", "reddonation_int", "subscriber_int", "image_id", "sound_id", "effect_id", "skill_stringkey", "skill_name" }, skills);
+        WriteCsv(Path.Combine(output, "skilltree.csv"), new[] { "tile_id", "reinforced_int", "upgrade_rank", "upgrade_count", "up_int", "sub_use", "follow_int", "watcher_int", "love_int", "donation_int", "reddonation_int", "subscriber_int", "image_id", "sound_id", "effect_id", "skill_stringkey", "skill_name" }, skills);
 
         var skillDescriptions = reader.Records("stringkey")
             .Where(row => Get(row, "string_ID").Length > 0)
