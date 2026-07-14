@@ -59,6 +59,10 @@ namespace GameKamiStreaming
         const string NextStageButtonSpriteId = "next_stage_button";
         const string StartScreenBackgroundSpriteId = "start_screen";
         const string StartGameButtonSpriteId = "start_button";
+        const string GameOverBackgroundSpriteId = "gameover";
+        const string GameOverReturnButtonSpriteId = "go_to_first";
+        static readonly Vector2 GameOverReturnButtonOffset = new Vector2(-36f, 36f);
+        static readonly Vector2 GameOverReturnButtonSize = new Vector2(440f, 440f);
         const string EndingVideoRelativePath = "KkamiStreaming/ending.mp4";
         const string BossFigureSpritePrefix = "boss";
         const float BossFigureDisplaySize = 136f;
@@ -307,6 +311,9 @@ namespace GameKamiStreaming
         [SerializeField] Vector2 startGameButtonOffset = new Vector2(-56f, 56f);
         [SerializeField] Vector2 startGameButtonSize = new Vector2(480f, 320f);
         [SerializeField] Button startGameButton;
+        [SerializeField] RectTransform gameOverCanvasRoot;
+        [SerializeField] RectTransform gameOverReturnButtonRoot;
+        [SerializeField] Button gameOverReturnButton;
         [SerializeField] RectTransform endingVideoCanvasRoot;
         [SerializeField] RawImage endingVideoImage;
         [SerializeField] VideoPlayer endingVideoPlayer;
@@ -352,6 +359,7 @@ namespace GameKamiStreaming
         bool kkamiAppearChanging;
         bool skillTreeDragging;
         bool currentStageBossSpawned;
+        bool currentStageBossDefeated;
         bool gameStarted;
         bool endingVideoPlaying;
         bool endingVideoCompleted;
@@ -635,6 +643,7 @@ namespace GameKamiStreaming
             ConfigureCanvasScaler(skillTreeCanvasRoot);
             EnsureBossFigurePanels();
             EnsureStartScreenCanvas();
+            EnsureGameOverCanvas();
             EnsureEndingVideoCanvas();
             EnsureEndingBlackout();
             EnsureBgmAudioSource();
@@ -947,6 +956,99 @@ namespace GameKamiStreaming
             {
                 startGameButton.onClick.AddListener(StartGameFromStartScreen);
             }
+        }
+
+        void EnsureGameOverCanvas()
+        {
+            if (gameOverCanvasRoot == null)
+            {
+                var canvas = new GameObject("Game Over Canvas", typeof(RectTransform), typeof(Canvas), typeof(CanvasScaler), typeof(GraphicRaycaster)).GetComponent<Canvas>();
+                canvas.renderMode = RenderMode.ScreenSpaceCamera;
+                canvas.worldCamera = uiCamera;
+                canvas.planeDistance = 7.5f;
+                canvas.sortingOrder = 150;
+                ConfigureCanvasScaler(canvas.GetComponent<CanvasScaler>());
+                gameOverCanvasRoot = canvas.transform as RectTransform;
+
+                AddFullScreenImage("Game Over Backdrop", null, gameOverCanvasRoot, Color.black).raycastTarget = false;
+                var background = AddFullScreenImage("Game Over Background", LoadSprite(GameOverBackgroundSpriteId), gameOverCanvasRoot, Color.white);
+                background.preserveAspect = true;
+                background.raycastTarget = false;
+            }
+            else
+            {
+                var canvas = gameOverCanvasRoot.GetComponent<Canvas>();
+                if (canvas != null)
+                {
+                    canvas.renderMode = RenderMode.ScreenSpaceCamera;
+                    canvas.worldCamera = uiCamera;
+                    canvas.planeDistance = 7.5f;
+                    canvas.sortingOrder = 150;
+                }
+
+                ConfigureCanvasScaler(gameOverCanvasRoot);
+                var backdrop = FindChildRect(gameOverCanvasRoot, "Game Over Backdrop");
+                if (backdrop == null)
+                {
+                    AddFullScreenImage("Game Over Backdrop", null, gameOverCanvasRoot, Color.black).transform.SetAsFirstSibling();
+                }
+
+                var background = FindChildRect(gameOverCanvasRoot, "Game Over Background")?.GetComponent<Image>();
+                if (background == null)
+                {
+                    background = AddFullScreenImage("Game Over Background", LoadSprite(GameOverBackgroundSpriteId), gameOverCanvasRoot, Color.white);
+                }
+
+                background.sprite = LoadSprite(GameOverBackgroundSpriteId);
+                background.color = Color.white;
+                background.preserveAspect = true;
+                background.raycastTarget = false;
+            }
+
+            if (gameOverReturnButtonRoot == null && gameOverCanvasRoot != null)
+            {
+                gameOverReturnButtonRoot = FindChildRect(gameOverCanvasRoot, "Return To First Button");
+            }
+
+            if (gameOverReturnButtonRoot == null && gameOverCanvasRoot != null)
+            {
+                gameOverReturnButtonRoot = CreateRect(
+                    "Return To First Button",
+                    gameOverCanvasRoot,
+                    new Vector2(1f, 0f),
+                    new Vector2(1f, 0f),
+                    new Vector2(1f, 0f),
+                    GameOverReturnButtonOffset,
+                    GameOverReturnButtonSize);
+            }
+
+            if (gameOverReturnButtonRoot == null)
+            {
+                return;
+            }
+
+            var buttonImage = gameOverReturnButtonRoot.GetComponent<Image>();
+            if (buttonImage == null)
+            {
+                buttonImage = gameOverReturnButtonRoot.gameObject.AddComponent<Image>();
+            }
+
+            buttonImage.sprite = LoadSprite(GameOverReturnButtonSpriteId);
+            buttonImage.color = Color.white;
+            buttonImage.preserveAspect = true;
+            buttonImage.raycastTarget = true;
+
+            gameOverReturnButton = gameOverReturnButtonRoot.GetComponent<Button>();
+            if (gameOverReturnButton == null)
+            {
+                gameOverReturnButton = gameOverReturnButtonRoot.gameObject.AddComponent<Button>();
+            }
+
+            gameOverReturnButton.targetGraphic = buttonImage;
+            gameOverReturnButton.onClick.RemoveListener(ReturnToFirstScreenFromGameOver);
+            gameOverReturnButton.onClick.AddListener(ReturnToFirstScreenFromGameOver);
+            gameOverReturnButtonRoot.SetAsLastSibling();
+            gameOverCanvasRoot.gameObject.SetActive(false);
         }
 
         void EnsureEndingVideoCanvas()
@@ -1937,6 +2039,11 @@ namespace GameKamiStreaming
             if (piece == null || piece.pieceId < 30001 || piece.pieceId > 30005)
             {
                 return;
+            }
+
+            if (currentStage != null && currentStage.bossId == piece.pieceId)
+            {
+                currentStageBossDefeated = true;
             }
 
             var panelIndex = piece.pieceId - 30001;
@@ -3518,6 +3625,7 @@ namespace GameKamiStreaming
         void ResetRoundTimer()
         {
             currentStageBossSpawned = false;
+            currentStageBossDefeated = false;
             roundRemainingSeconds = currentStage != null ? Mathf.Max(1, currentStage.timeLimitSeconds) : 0f;
             displayedRoundSecond = -1;
             UpdateRoundTimerLabel(true);
@@ -3535,7 +3643,14 @@ namespace GameKamiStreaming
             UpdateRoundTimerLabel(false);
             if (roundRemainingSeconds <= 0f)
             {
-                OpenSkillTree();
+                if (currentStage.bossId > 0 && !currentStageBossDefeated)
+                {
+                    ShowGameOverScreen();
+                }
+                else
+                {
+                    OpenSkillTree();
+                }
             }
         }
 
@@ -3800,6 +3915,11 @@ namespace GameKamiStreaming
             if (endingVideoCanvasRoot != null)
             {
                 endingVideoCanvasRoot.gameObject.SetActive(false);
+            }
+
+            if (gameOverCanvasRoot != null)
+            {
+                gameOverCanvasRoot.gameObject.SetActive(false);
             }
 
             if (chattingAppearImage != null)
@@ -5254,8 +5374,28 @@ namespace GameKamiStreaming
             }
         }
 
+        void EnsureAudioListener()
+        {
+            if (FindFirstObjectByType<AudioListener>() != null)
+            {
+                return;
+            }
+
+            if (uiCamera == null)
+            {
+                uiCamera = Camera.main;
+            }
+
+            if (uiCamera != null && uiCamera.GetComponent<AudioListener>() == null)
+            {
+                uiCamera.gameObject.AddComponent<AudioListener>();
+            }
+        }
+
         void EnsureBgmAudioSource()
         {
+            EnsureAudioListener();
+
             if (bgmAudioSource != null)
             {
                 return;
@@ -5352,7 +5492,66 @@ namespace GameKamiStreaming
                 endingVideoCanvasRoot.gameObject.SetActive(false);
             }
 
+            if (gameOverCanvasRoot != null)
+            {
+                gameOverCanvasRoot.gameObject.SetActive(false);
+            }
+
             PlayBgmForStage(1, true);
+        }
+
+        void ShowGameOverScreen()
+        {
+            gameStarted = false;
+            skillTreeOpen = false;
+            HideMiningAttack();
+            ClearActivePieces();
+            ResetManagerAgents();
+            SetManagerDisplayVisible(false);
+            StopBgm();
+            EnsureGameOverCanvas();
+
+            if (canvasRoot != null)
+            {
+                canvasRoot.gameObject.SetActive(false);
+            }
+
+            if (skillTreeCanvasRoot != null)
+            {
+                skillTreeCanvasRoot.gameObject.SetActive(false);
+            }
+
+            if (startScreenCanvasRoot != null)
+            {
+                startScreenCanvasRoot.gameObject.SetActive(false);
+            }
+
+            if (endingVideoCanvasRoot != null)
+            {
+                endingVideoCanvasRoot.gameObject.SetActive(false);
+            }
+
+            if (gameOverCanvasRoot != null)
+            {
+                gameOverCanvasRoot.gameObject.SetActive(true);
+            }
+        }
+
+        public void ReturnToFirstScreenFromGameOver()
+        {
+            ClearActivePieces();
+            ResetManagerAgents();
+            if (stageManager != null)
+            {
+                stageManager.SelectByStageId(StageIdSpriteBase, 0);
+            }
+
+            currentStageBossSpawned = false;
+            currentStageBossDefeated = false;
+            ResetBossProgressDisplays();
+            ApplyCurrentStageSprite();
+            RefreshStageNumberLabel();
+            ShowStartScreen();
         }
 
         void ShowEndingVideoCanvas()
@@ -5371,6 +5570,11 @@ namespace GameKamiStreaming
             if (startScreenCanvasRoot != null)
             {
                 startScreenCanvasRoot.gameObject.SetActive(false);
+            }
+
+            if (gameOverCanvasRoot != null)
+            {
+                gameOverCanvasRoot.gameObject.SetActive(false);
             }
 
             if (endingVideoCanvasRoot != null)
