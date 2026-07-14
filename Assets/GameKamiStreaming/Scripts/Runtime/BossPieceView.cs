@@ -45,6 +45,8 @@ namespace GameKamiStreaming
         int idleFrameIndex;
         bool animateIdleWithMoveAnimation;
         bool defeated;
+        bool deathPositionLocked;
+        Vector2 deathAnchoredPosition;
         readonly List<Vector2> movePath = new List<Vector2>();
 
         public void Initialize(
@@ -111,6 +113,11 @@ namespace GameKamiStreaming
                 pieceView.Defeated -= HandleDefeated;
             }
 
+        }
+
+        void LateUpdate()
+        {
+            LockToDeathPosition();
         }
 
         IEnumerator AirborneLoop()
@@ -473,6 +480,12 @@ namespace GameKamiStreaming
                 return;
             }
 
+            if (rectTransform != null)
+            {
+                deathAnchoredPosition = rectTransform.anchoredPosition;
+                deathPositionLocked = true;
+            }
+
             defeated = true;
             ResetDisplayTransform();
             if (image != null)
@@ -485,13 +498,16 @@ namespace GameKamiStreaming
             if (moveRoutine != null)
             {
                 StopCoroutine(moveRoutine);
+                moveRoutine = null;
             }
 
+            LockToDeathPosition();
             StartCoroutine(PlayDeathAndCollect());
         }
 
         IEnumerator PlayDeathAndCollect()
         {
+            LockToDeathPosition();
             BringToFront();
             SetVisibleAndHittable(true);
             if (pieceView != null)
@@ -503,6 +519,7 @@ namespace GameKamiStreaming
             {
                 for (var i = 0; i < deathFrames.Count; i++)
                 {
+                    LockToDeathPosition();
                     BringToFront();
                     image.sprite = deathFrames[i];
                     yield return new WaitForSeconds(DeathFrameSeconds);
@@ -515,6 +532,14 @@ namespace GameKamiStreaming
             }
 
             Destroy(gameObject);
+        }
+
+        void LockToDeathPosition()
+        {
+            if (defeated && deathPositionLocked && rectTransform != null)
+            {
+                rectTransform.anchoredPosition = deathAnchoredPosition;
+            }
         }
 
         void SetVisibleAndHittable(bool value)
