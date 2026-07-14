@@ -1,7 +1,10 @@
 ﻿using System.Collections;
 using System.Collections.Generic;
+using System.IO;
+using TMPro;
 using UnityEngine;
 using UnityEngine.EventSystems;
+using UnityEngine.Video;
 #if ENABLE_INPUT_SYSTEM
 using UnityEngine.InputSystem;
 using UnityEngine.InputSystem.UI;
@@ -13,6 +16,9 @@ namespace GameKamiStreaming
     public sealed class KkamiPrototypeGame : MonoBehaviour, IBossMovementArea
     {
         const string SpriteRoot = "GameKamiStreaming/Sprites/";
+        const string KaturiSdfFontPath = SpriteRoot + "font/Katuri SDF";
+        const float FixedGameAspectRatio = 16f / 9f;
+        static readonly Vector2 FixedGameReferenceResolution = new Vector2(1920f, 1080f);
         const int TargetPieceCount = 12;
         const float MiningRadius = 120f;
         const float DamagePerSecond = 7f;
@@ -47,6 +53,9 @@ namespace GameKamiStreaming
         const string SkillTreeAvailableButtonSpriteId = "skilltree_button_available";
         const string ManagerActivationSkillKey = "SD10116";
         const string NextStageButtonSpriteId = "next_stage_button";
+        const string StartScreenBackgroundSpriteId = "start_screen";
+        const string StartGameButtonSpriteId = "start_button";
+        const string EndingVideoRelativePath = "KkamiStreaming/ending.mp4";
         const string TemporaryStageJumpButtonGroupName = "Temporary Stage Jump Buttons";
         static readonly Dictionary<string, string> SkillTreeIconSpriteIds = new Dictionary<string, string>
         {
@@ -82,6 +91,16 @@ namespace GameKamiStreaming
         const int StageSpriteGroupSize = 10;
         const int StageSpriteGroupCount = 5;
         const int StageIdSpriteBase = 40001;
+        const int FirstStageBackgroundEndStageNumber = 10;
+        const int SecondStageBackgroundEndStageNumber = 20;
+        const int ThirdStageBackgroundEndStageNumber = 30;
+        const int FourthStageBackgroundEndStageNumber = 40;
+        const int FifthStageBackgroundEndStageNumber = 50;
+        static readonly Color FirstStageBackgroundColor = new Color(231f / 255f, 181f / 255f, 253f / 255f, 1f);
+        static readonly Color SecondStageBackgroundColor = new Color(16f / 255f, 49f / 255f, 142f / 255f, 1f);
+        static readonly Color ThirdStageBackgroundColor = new Color(139f / 255f, 217f / 255f, 241f / 255f, 1f);
+        static readonly Color FourthStageBackgroundColor = new Color(49f / 255f, 105f / 255f, 29f / 255f, 1f);
+        static readonly Color FifthStageBackgroundColor = new Color(74f / 255f, 48f / 255f, 48f / 255f, 1f);
         const int BossKillPanelCount = 5;
         static readonly int[] TemporaryStageJumpNumbers = { 9, 19, 29, 39, 49 };
         const float StageIndicatorNumberScale = 1.45f;
@@ -255,23 +274,32 @@ namespace GameKamiStreaming
         [SerializeField] RectTransform miningCursor;
         [SerializeField] PixelNumberLabel roundTimerLabel;
         [SerializeField] RectTransform skillTreeCanvasRoot;
+        [SerializeField] RectTransform startScreenCanvasRoot;
+        [SerializeField] RectTransform startGameButtonRoot;
+        [SerializeField] Vector2 startGameButtonOffset = new Vector2(-56f, 56f);
+        [SerializeField] Vector2 startGameButtonSize = new Vector2(480f, 320f);
+        [SerializeField] Button startGameButton;
+        [SerializeField] RectTransform endingVideoCanvasRoot;
+        [SerializeField] RawImage endingVideoImage;
+        [SerializeField] VideoPlayer endingVideoPlayer;
         [SerializeField] RectTransform skillTreeContentRoot;
         [SerializeField] RectTransform skillTreeTooltipRoot;
-        Text skillTreeTooltipTitleText;
-        Text skillTreeTooltipDescriptionText;
-        Text skillTreeTooltipCostText;
+        TextMeshProUGUI skillTreeTooltipTitleText;
+        TextMeshProUGUI skillTreeTooltipDescriptionText;
+        TextMeshProUGUI skillTreeTooltipCostText;
         [SerializeField] RectTransform stageIndicatorRoot;
         [SerializeField] Button startNextStageButton;
         [SerializeField] RectTransform spawnPoint1;
         [SerializeField] RectTransform spawnPoint2;
         [SerializeField] RectTransform spawnPoint3;
         [SerializeField] RectTransform spawnPoint4;
+        [SerializeField] Image gameplayBackground;
         [SerializeField] Image stageImage;
         [SerializeField] PixelNumberLabel stageNumberLabel;
         [SerializeField] Image miningAttackImage;
         [SerializeField] Image kkamiAppearImage;
         [SerializeField] Image chattingAppearImage;
-        [SerializeField] Text chattingAppearText;
+        [SerializeField] TextMeshProUGUI chattingAppearText;
 
         KkamiTableDatabase database;
         GameResourceManager resourceManager;
@@ -292,7 +320,13 @@ namespace GameKamiStreaming
         bool kkamiAppearChanging;
         bool skillTreeDragging;
         bool currentStageBossSpawned;
+        bool gameStarted;
+        bool endingVideoPlaying;
+        bool endingVideoCompleted;
+        bool endingVideoFailed;
         Material stageDesaturationMaterial;
+        static TMP_FontAsset katuriSdfFont;
+        RenderTexture endingVideoRenderTexture;
         float miningSpeedMultiplier = 1f;
         float miningRangeMultiplier = 1f;
         float miningDamageMultiplier = 1f;
@@ -303,6 +337,8 @@ namespace GameKamiStreaming
         float managerDamageMultiplier = 1f;
         float managerSpeedMultiplier = 1f;
         Coroutine managerRoutine;
+        int lastScreenWidth;
+        int lastScreenHeight;
 
         sealed class BossDefinition
         {
@@ -383,11 +419,12 @@ namespace GameKamiStreaming
         void Awake()
         {
             InitializeGame();
+            ApplyFixedGameAspectRatio();
         }
 
         void Start()
         {
-            if (!skillTreeOpen)
+            if (gameStarted && !skillTreeOpen)
             {
                 FillStagePieces();
             }
@@ -395,6 +432,13 @@ namespace GameKamiStreaming
 
         void Update()
         {
+            ApplyFixedGameAspectRatio();
+
+            if (!gameStarted)
+            {
+                return;
+            }
+
             if (skillTreeOpen)
             {
                 UpdateSkillTreeNavigation();
@@ -437,7 +481,10 @@ namespace GameKamiStreaming
                 uiCamera = Camera.main;
             }
 
+            ApplyFixedGameAspectRatio();
+
             EnsureSkillTreeCanvas();
+            ConfigureCanvasScaler(skillTreeCanvasRoot);
             if (skillTreeCanvasRoot != null)
             {
                 skillTreeCanvasRoot.gameObject.SetActive(false);
@@ -451,6 +498,23 @@ namespace GameKamiStreaming
 
             PlayCollectBurst(source, piece.resourceId);
             StartCoroutine(RespawnAfterDelay(0.45f / Mathf.Max(0.01f, pieceSpawnSpeedMultiplier)));
+        }
+
+        public void EnsureEditableStartScreen()
+        {
+            EnsureEventSystem();
+            if (uiCamera == null)
+            {
+                uiCamera = Camera.main;
+            }
+
+            ApplyFixedGameAspectRatio();
+            EnsureStartScreenCanvas();
+            EnsureEndingVideoCanvas();
+            if (startScreenCanvasRoot != null)
+            {
+                startScreenCanvasRoot.gameObject.SetActive(true);
+            }
         }
 
         public void PlayHitFeedback(RectTransform source, string effectId)
@@ -492,9 +556,13 @@ namespace GameKamiStreaming
                 uiCamera = Camera.main;
             }
 
+            ApplyFixedGameAspectRatio();
+            ConfigureCanvasScaler(canvasRoot);
+
             resourceLabels.Clear();
             skillTreeResourceLabels.Clear();
             resourceManager.Initialize(database.Resources);
+            ConvertExistingTextToKaturiSdf();
 
             foreach (var counter in canvasRoot.GetComponentsInChildren<ResourceCounterView>(true))
             {
@@ -520,8 +588,10 @@ namespace GameKamiStreaming
             EnsureRoundTimerLabel();
             EnsureStageIndicator();
             EnsureSkillTreeCanvas();
+            ConfigureCanvasScaler(skillTreeCanvasRoot);
+            EnsureStartScreenCanvas();
+            EnsureEndingVideoCanvas();
             RefreshAllResourceLabels();
-            ShowGameCanvas();
             ApplyCurrentStageSprite();
             RefreshStageNumberLabel();
             ResetRoundTimer();
@@ -533,6 +603,7 @@ namespace GameKamiStreaming
             }
             RefreshMiningCursor();
             miningCursor.gameObject.SetActive(false);
+            ShowStartScreen();
         }
 
         void EnsureEffectLayer()
@@ -617,6 +688,7 @@ namespace GameKamiStreaming
 
         void ApplyCurrentStageSprite()
         {
+            ApplyCurrentStageBackgroundColor();
             EnsureStageImage();
             if (stageImage == null)
             {
@@ -630,6 +702,34 @@ namespace GameKamiStreaming
             }
 
             stageImage.sprite = sprite;
+        }
+
+        void ApplyCurrentStageBackgroundColor()
+        {
+            if (gameplayBackground == null && canvasRoot != null)
+            {
+                gameplayBackground = canvasRoot.Find("Background")?.GetComponent<Image>();
+            }
+
+            if (gameplayBackground == null)
+            {
+                return;
+            }
+
+            var stageNumber = currentStage != null
+                ? currentStage.stageId - StageIdSpriteBase + 1
+                : currentStageIndex + 1;
+            gameplayBackground.color = stageNumber <= FirstStageBackgroundEndStageNumber
+                ? FirstStageBackgroundColor
+                : stageNumber <= SecondStageBackgroundEndStageNumber
+                    ? SecondStageBackgroundColor
+                    : stageNumber <= ThirdStageBackgroundEndStageNumber
+                        ? ThirdStageBackgroundColor
+                        : stageNumber <= FourthStageBackgroundEndStageNumber
+                            ? FourthStageBackgroundColor
+                    : stageNumber <= FifthStageBackgroundEndStageNumber && stageNumber >= 41
+                        ? FifthStageBackgroundColor
+                    : new Color(0.09f, 0.1f, 0.12f, 1f);
         }
 
         string GetCurrentStageSpriteId()
@@ -671,17 +771,296 @@ namespace GameKamiStreaming
             canvas.planeDistance = 10f;
 
             var scaler = canvas.GetComponent<CanvasScaler>();
-            scaler.uiScaleMode = CanvasScaler.ScaleMode.ScaleWithScreenSize;
-            scaler.referenceResolution = new Vector2(1080f, 1920f);
-            scaler.screenMatchMode = CanvasScaler.ScreenMatchMode.MatchWidthOrHeight;
-            scaler.matchWidthOrHeight = 0.5f;
+            ConfigureCanvasScaler(scaler);
 
             canvasRoot = canvas.transform as RectTransform;
         }
 
+        void ApplyFixedGameAspectRatio()
+        {
+            if (uiCamera == null || Screen.width <= 0 || Screen.height <= 0)
+            {
+                return;
+            }
+
+            if (lastScreenWidth == Screen.width && lastScreenHeight == Screen.height)
+            {
+                return;
+            }
+
+            var screenAspectRatio = (float)Screen.width / Screen.height;
+            if (screenAspectRatio > FixedGameAspectRatio)
+            {
+                var width = FixedGameAspectRatio / screenAspectRatio;
+                uiCamera.rect = new Rect((1f - width) * 0.5f, 0f, width, 1f);
+            }
+            else
+            {
+                var height = screenAspectRatio / FixedGameAspectRatio;
+                uiCamera.rect = new Rect(0f, (1f - height) * 0.5f, 1f, height);
+            }
+
+            lastScreenWidth = Screen.width;
+            lastScreenHeight = Screen.height;
+        }
+
+        static void ConfigureCanvasScaler(CanvasScaler scaler)
+        {
+            if (scaler == null)
+            {
+                return;
+            }
+
+            scaler.uiScaleMode = CanvasScaler.ScaleMode.ScaleWithScreenSize;
+            scaler.referenceResolution = FixedGameReferenceResolution;
+            scaler.screenMatchMode = CanvasScaler.ScreenMatchMode.MatchWidthOrHeight;
+            scaler.matchWidthOrHeight = 0.5f;
+        }
+
+        static void ConfigureCanvasScaler(RectTransform root)
+        {
+            if (root != null)
+            {
+                ConfigureCanvasScaler(root.GetComponent<CanvasScaler>());
+            }
+        }
+
+        void EnsureStartScreenCanvas()
+        {
+            if (startScreenCanvasRoot == null)
+            {
+                var canvas = new GameObject("Start Screen Canvas", typeof(RectTransform), typeof(Canvas), typeof(CanvasScaler), typeof(GraphicRaycaster)).GetComponent<Canvas>();
+                canvas.renderMode = RenderMode.ScreenSpaceCamera;
+                canvas.worldCamera = uiCamera;
+                canvas.planeDistance = 8f;
+                canvas.sortingOrder = 100;
+                ConfigureCanvasScaler(canvas.GetComponent<CanvasScaler>());
+                startScreenCanvasRoot = canvas.transform as RectTransform;
+
+                var background = AddFullScreenImage("Start Screen Background", LoadSprite(StartScreenBackgroundSpriteId), startScreenCanvasRoot, Color.white);
+                background.preserveAspect = true;
+                background.raycastTarget = false;
+            }
+            else
+            {
+                var canvas = startScreenCanvasRoot.GetComponent<Canvas>();
+                if (canvas != null)
+                {
+                    canvas.renderMode = RenderMode.ScreenSpaceCamera;
+                    canvas.worldCamera = uiCamera;
+                    canvas.planeDistance = 8f;
+                    canvas.sortingOrder = 100;
+                }
+
+                ConfigureCanvasScaler(startScreenCanvasRoot);
+                var background = FindChildRect(startScreenCanvasRoot, "Start Screen Background");
+                if (background == null)
+                {
+                    var backgroundImage = AddFullScreenImage("Start Screen Background", LoadSprite(StartScreenBackgroundSpriteId), startScreenCanvasRoot, Color.white);
+                    backgroundImage.preserveAspect = true;
+                    backgroundImage.raycastTarget = false;
+                }
+            }
+
+            if (startGameButtonRoot == null && startScreenCanvasRoot != null)
+            {
+                startGameButtonRoot = FindChildRect(startScreenCanvasRoot, "Start Game Button");
+            }
+
+            if (startGameButtonRoot == null && startScreenCanvasRoot != null)
+            {
+                startGameButtonRoot = CreateRect("Start Game Button", startScreenCanvasRoot, new Vector2(1f, 0f), new Vector2(1f, 0f), new Vector2(1f, 0f), startGameButtonOffset, startGameButtonSize);
+            }
+
+            if (startGameButtonRoot == null)
+            {
+                return;
+            }
+
+            var image = startGameButtonRoot.GetComponent<Image>();
+            if (image == null)
+            {
+                image = startGameButtonRoot.gameObject.AddComponent<Image>();
+            }
+
+            image.sprite = LoadSprite(StartGameButtonSpriteId);
+            image.color = Color.white;
+            image.preserveAspect = true;
+            image.raycastTarget = true;
+
+            startGameButton = startGameButtonRoot.GetComponent<Button>();
+            if (startGameButton == null)
+            {
+                startGameButton = startGameButtonRoot.gameObject.AddComponent<Button>();
+            }
+
+            startGameButton.targetGraphic = image;
+            startGameButton.onClick.RemoveListener(StartGameFromStartScreen);
+            if (!HasPersistentStartGameListener(startGameButton))
+            {
+                startGameButton.onClick.AddListener(StartGameFromStartScreen);
+            }
+        }
+
+        void EnsureEndingVideoCanvas()
+        {
+            if (endingVideoCanvasRoot == null)
+            {
+                var canvas = new GameObject("Ending Video Canvas", typeof(RectTransform), typeof(Canvas), typeof(CanvasScaler), typeof(GraphicRaycaster)).GetComponent<Canvas>();
+                canvas.renderMode = RenderMode.ScreenSpaceCamera;
+                canvas.worldCamera = uiCamera;
+                canvas.planeDistance = 7f;
+                canvas.sortingOrder = 200;
+                ConfigureCanvasScaler(canvas.GetComponent<CanvasScaler>());
+                endingVideoCanvasRoot = canvas.transform as RectTransform;
+
+                AddFullScreenImage("Ending Video Background", null, endingVideoCanvasRoot, Color.black).raycastTarget = false;
+                var videoRect = CreateRect("Ending Video", endingVideoCanvasRoot, Vector2.zero, Vector2.one, new Vector2(0.5f, 0.5f), Vector2.zero, Vector2.zero);
+                endingVideoImage = videoRect.gameObject.AddComponent<RawImage>();
+                endingVideoImage.color = Color.white;
+                endingVideoImage.raycastTarget = false;
+                endingVideoPlayer = endingVideoCanvasRoot.gameObject.AddComponent<VideoPlayer>();
+            }
+            else
+            {
+                var canvas = endingVideoCanvasRoot.GetComponent<Canvas>();
+                if (canvas != null)
+                {
+                    canvas.renderMode = RenderMode.ScreenSpaceCamera;
+                    canvas.worldCamera = uiCamera;
+                    canvas.planeDistance = 7f;
+                    canvas.sortingOrder = 200;
+                }
+
+                ConfigureCanvasScaler(endingVideoCanvasRoot);
+                if (endingVideoImage == null)
+                {
+                    endingVideoImage = FindChildRect(endingVideoCanvasRoot, "Ending Video")?.GetComponent<RawImage>();
+                }
+
+                if (endingVideoPlayer == null)
+                {
+                    endingVideoPlayer = endingVideoCanvasRoot.GetComponent<VideoPlayer>();
+                }
+            }
+
+            if (endingVideoPlayer == null)
+            {
+                return;
+            }
+
+            if (endingVideoRenderTexture == null)
+            {
+                endingVideoRenderTexture = new RenderTexture(1920, 1080, 0, RenderTextureFormat.ARGB32)
+                {
+                    name = "Ending Video Render Texture"
+                };
+                endingVideoRenderTexture.Create();
+            }
+
+            endingVideoPlayer.source = VideoSource.Url;
+            endingVideoPlayer.renderMode = VideoRenderMode.RenderTexture;
+            endingVideoPlayer.targetTexture = endingVideoRenderTexture;
+            endingVideoPlayer.playOnAwake = false;
+            endingVideoPlayer.waitForFirstFrame = true;
+            endingVideoPlayer.skipOnDrop = true;
+            endingVideoPlayer.isLooping = false;
+            endingVideoPlayer.audioOutputMode = VideoAudioOutputMode.Direct;
+            endingVideoPlayer.loopPointReached -= HandleEndingVideoCompleted;
+            endingVideoPlayer.loopPointReached += HandleEndingVideoCompleted;
+            endingVideoPlayer.errorReceived -= HandleEndingVideoError;
+            endingVideoPlayer.errorReceived += HandleEndingVideoError;
+
+            if (endingVideoImage != null)
+            {
+                endingVideoImage.texture = endingVideoRenderTexture;
+            }
+
+            if (!endingVideoPlaying)
+            {
+                endingVideoCanvasRoot.gameObject.SetActive(false);
+            }
+        }
+
+        IEnumerator PlayEndingVideoThenReturnToStartScreen()
+        {
+            if (endingVideoPlaying)
+            {
+                yield break;
+            }
+
+            EnsureEndingVideoCanvas();
+            if (endingVideoPlayer == null || endingVideoCanvasRoot == null)
+            {
+                ReturnToStartScreenAfterEnding();
+                yield break;
+            }
+
+            endingVideoPlaying = true;
+            endingVideoCompleted = false;
+            endingVideoFailed = false;
+            gameStarted = false;
+            ShowEndingVideoCanvas();
+
+            endingVideoPlayer.Stop();
+            endingVideoPlayer.url = Path.Combine(Application.streamingAssetsPath, EndingVideoRelativePath);
+            endingVideoPlayer.Prepare();
+            while (!endingVideoPlayer.isPrepared && !endingVideoFailed)
+            {
+                yield return null;
+            }
+
+            if (endingVideoFailed)
+            {
+                ReturnToStartScreenAfterEnding();
+                yield break;
+            }
+
+            endingVideoPlayer.Play();
+            while (!endingVideoCompleted && !endingVideoFailed)
+            {
+                yield return null;
+            }
+
+            ReturnToStartScreenAfterEnding();
+        }
+
+        void HandleEndingVideoCompleted(VideoPlayer source)
+        {
+            endingVideoCompleted = true;
+        }
+
+        void HandleEndingVideoError(VideoPlayer source, string message)
+        {
+            endingVideoFailed = true;
+            Debug.LogWarning("Unable to play the ending video: " + message);
+        }
+
+        void ReturnToStartScreenAfterEnding()
+        {
+            if (endingVideoPlayer != null)
+            {
+                endingVideoPlayer.Stop();
+            }
+
+            ClearActivePieces();
+            if (stageManager != null)
+            {
+                stageManager.SelectByStageId(StageIdSpriteBase, 0);
+            }
+
+            for (var i = 0; i < bossKillPanels.Length; i++)
+            {
+                SetImageAlpha(bossKillPanels[i], 0f);
+            }
+
+            endingVideoPlaying = false;
+            ShowStartScreen();
+        }
+
         void BuildScene()
         {
-            AddFullScreenImage("Background", null, canvasRoot, new Color(0.09f, 0.1f, 0.12f, 1f));
+            gameplayBackground = AddFullScreenImage("Background", null, canvasRoot, FirstStageBackgroundColor);
 
             stageArea = CreateRect("Stage Area", canvasRoot, new Vector2(0.5f, 0f), new Vector2(0.5f, 0f), new Vector2(0.5f, 0f), new Vector2(0f, 110f), new Vector2(1120f, 1220f));
             var stage = AddAnchoredImage("Stage", LoadSprite("stage"), stageArea, Vector2.zero, Vector2.one, new Vector2(0.5f, 0.5f), Vector2.zero, Vector2.zero);
@@ -758,10 +1137,7 @@ namespace GameKamiStreaming
             canvas.sortingOrder = 50;
 
             var scaler = canvas.GetComponent<CanvasScaler>();
-            scaler.uiScaleMode = CanvasScaler.ScaleMode.ScaleWithScreenSize;
-            scaler.referenceResolution = new Vector2(1080f, 1920f);
-            scaler.screenMatchMode = CanvasScaler.ScreenMatchMode.MatchWidthOrHeight;
-            scaler.matchWidthOrHeight = 0.5f;
+            ConfigureCanvasScaler(scaler);
 
             var root = canvas.transform as RectTransform;
             var backdrop = AddFullScreenImage("Skill Tree Backdrop", LoadSprite(SkillTreeBackgroundSpriteId), root, Color.white);
@@ -794,12 +1170,12 @@ namespace GameKamiStreaming
             button.onClick.AddListener(StartNextStageFromSkillTree);
 
             var label = CreateRect("Label", buttonRoot, Vector2.zero, Vector2.one, new Vector2(0.5f, 0.5f), Vector2.zero, Vector2.zero);
-            var text = label.gameObject.AddComponent<Text>();
+            var text = label.gameObject.AddComponent<TextMeshProUGUI>();
             text.text = "NEXT STAGE";
-            text.font = LoadDefaultFont();
+            text.font = LoadKaturiSdfFont();
             text.fontSize = 42;
-            text.fontStyle = FontStyle.Bold;
-            text.alignment = TextAnchor.MiddleCenter;
+            text.fontStyle = FontStyles.Bold;
+            text.alignment = TextAlignmentOptions.Center;
             text.color = new Color(0.08f, 0.07f, 0.04f, 1f);
             text.raycastTarget = false;
             label.gameObject.SetActive(false);
@@ -931,13 +1307,13 @@ namespace GameKamiStreaming
             image.raycastTarget = false;
 
             var title = CreateText("Title", root, new Vector2(0.18f, 0.62f), new Vector2(0.82f, 0.76f), "TEST SKILL", 38, FontStyle.Bold);
-            title.alignment = TextAnchor.MiddleLeft;
+            title.alignment = TextAlignmentOptions.MidlineLeft;
 
             var body = CreateText("Description", root, new Vector2(0.18f, 0.36f), new Vector2(0.82f, 0.60f), "강화 설명 데이터 연결 예정", 28, FontStyle.Normal);
-            body.alignment = TextAnchor.UpperLeft;
+            body.alignment = TextAlignmentOptions.TopLeft;
 
             var cost = CreateText("Cost", root, new Vector2(0.18f, 0.24f), new Vector2(0.82f, 0.34f), "COST 0", 28, FontStyle.Bold);
-            cost.alignment = TextAnchor.MiddleLeft;
+            cost.alignment = TextAlignmentOptions.MidlineLeft;
 
             skillTreeTooltipTitleText = title;
             skillTreeTooltipDescriptionText = body;
@@ -1318,20 +1694,20 @@ namespace GameKamiStreaming
                 textRect = CreateRect("Chat Messages", root, new Vector2(0.18f, 0.16f), new Vector2(0.82f, 0.79f), new Vector2(0.5f, 0.5f), Vector2.zero, Vector2.zero);
             }
 
-            chattingAppearText = textRect.GetComponent<Text>();
+            chattingAppearText = textRect.GetComponent<TextMeshProUGUI>();
             if (chattingAppearText == null)
             {
-                chattingAppearText = textRect.gameObject.AddComponent<Text>();
+                chattingAppearText = textRect.gameObject.AddComponent<TextMeshProUGUI>();
             }
 
-            chattingAppearText.font = LoadDefaultFont();
-            chattingAppearText.fontSize = 90;
-            chattingAppearText.resizeTextForBestFit = true;
-            chattingAppearText.resizeTextMinSize = 16;
-            chattingAppearText.resizeTextMaxSize = 90;
-            chattingAppearText.alignment = TextAnchor.UpperLeft;
-            chattingAppearText.horizontalOverflow = HorizontalWrapMode.Wrap;
-            chattingAppearText.verticalOverflow = VerticalWrapMode.Truncate;
+            chattingAppearText.font = LoadKaturiSdfFont();
+            chattingAppearText.fontSize = 80;
+            chattingAppearText.enableAutoSizing = true;
+            chattingAppearText.fontSizeMin = 16;
+            chattingAppearText.fontSizeMax = 80;
+            chattingAppearText.alignment = TextAlignmentOptions.TopLeft;
+            chattingAppearText.textWrappingMode = TextWrappingModes.Normal;
+            chattingAppearText.overflowMode = TextOverflowModes.Truncate;
             chattingAppearText.color = new Color(0.22f, 0.09f, 0.30f, 0.96f);
             chattingAppearText.raycastTarget = false;
 
@@ -1421,6 +1797,11 @@ namespace GameKamiStreaming
 
             panel.gameObject.SetActive(true);
             SetImageAlpha(panel, 1f);
+
+            if (piece.pieceId == 30005)
+            {
+                StartCoroutine(PlayEndingVideoThenReturnToStartScreen());
+            }
         }
 
         static void SetImageAlpha(Image image, float alpha)
@@ -2058,17 +2439,17 @@ namespace GameKamiStreaming
             label.sizeDelta = Vector2.zero;
             label.localScale = Vector3.one;
 
-            var text = label.GetComponent<Text>();
+            var text = label.GetComponent<TextMeshProUGUI>();
             if (text == null)
             {
-                text = label.gameObject.AddComponent<Text>();
+                text = label.gameObject.AddComponent<TextMeshProUGUI>();
             }
 
             text.text = stageNumber.ToString();
-            text.font = LoadDefaultFont();
+            text.font = LoadKaturiSdfFont();
             text.fontSize = 24;
-            text.fontStyle = FontStyle.Bold;
-            text.alignment = TextAnchor.MiddleCenter;
+            text.fontStyle = FontStyles.Bold;
+            text.alignment = TextAlignmentOptions.Center;
             text.color = Color.white;
             text.raycastTarget = false;
         }
@@ -2266,9 +2647,9 @@ namespace GameKamiStreaming
             image.sprite = LoadSprite(SkillTreeInfoSpriteId);
             image.preserveAspect = true;
             image.raycastTarget = false;
-            skillTreeTooltipTitleText = FindChildRect(skillTreeTooltipRoot, "Title")?.GetComponent<Text>();
-            skillTreeTooltipDescriptionText = FindChildRect(skillTreeTooltipRoot, "Description")?.GetComponent<Text>();
-            skillTreeTooltipCostText = FindChildRect(skillTreeTooltipRoot, "Cost")?.GetComponent<Text>();
+            skillTreeTooltipTitleText = FindChildRect(skillTreeTooltipRoot, "Title")?.GetComponent<TextMeshProUGUI>();
+            skillTreeTooltipDescriptionText = FindChildRect(skillTreeTooltipRoot, "Description")?.GetComponent<TextMeshProUGUI>();
+            skillTreeTooltipCostText = FindChildRect(skillTreeTooltipRoot, "Cost")?.GetComponent<TextMeshProUGUI>();
             skillTreeTooltipRoot.gameObject.SetActive(false);
         }
 
@@ -2862,6 +3243,19 @@ namespace GameKamiStreaming
             return false;
         }
 
+        bool HasPersistentStartGameListener(Button button)
+        {
+            for (var i = 0; i < button.onClick.GetPersistentEventCount(); i++)
+            {
+                if (button.onClick.GetPersistentTarget(i) == this && button.onClick.GetPersistentMethodName(i) == nameof(StartGameFromStartScreen))
+                {
+                    return true;
+                }
+            }
+
+            return false;
+        }
+
         void ResetRoundTimer()
         {
             currentStageBossSpawned = false;
@@ -2928,6 +3322,23 @@ namespace GameKamiStreaming
             stageManager.MoveNext();
 
             StartSelectedStageFromSkillTree();
+        }
+
+        public void StartGameFromStartScreen()
+        {
+            if (gameStarted)
+            {
+                return;
+            }
+
+            gameStarted = true;
+            ShowGameCanvas();
+            ApplyCurrentStageSprite();
+            RefreshStageNumberLabel();
+            ResetRoundTimer();
+            ResetManagerAgents();
+            SetManagerDisplayVisible(managerCount > 0);
+            FillStagePieces();
         }
 
         void StartStageFromSkillTree(int stageNumber)
@@ -3106,9 +3517,24 @@ namespace GameKamiStreaming
 
         void ShowGameCanvas()
         {
+            if (canvasRoot != null)
+            {
+                canvasRoot.gameObject.SetActive(true);
+            }
+
             if (skillTreeCanvasRoot != null)
             {
                 skillTreeCanvasRoot.gameObject.SetActive(false);
+            }
+
+            if (startScreenCanvasRoot != null)
+            {
+                startScreenCanvasRoot.gameObject.SetActive(false);
+            }
+
+            if (endingVideoCanvasRoot != null)
+            {
+                endingVideoCanvasRoot.gameObject.SetActive(false);
             }
 
             if (chattingAppearImage != null)
@@ -4086,15 +4512,15 @@ namespace GameKamiStreaming
             return image;
         }
 
-        static Text CreateText(string name, RectTransform parent, Vector2 anchorMin, Vector2 anchorMax, string value, int fontSize, FontStyle fontStyle)
+        static TextMeshProUGUI CreateText(string name, RectTransform parent, Vector2 anchorMin, Vector2 anchorMax, string value, int fontSize, FontStyle fontStyle)
         {
             var rect = CreateRect(name, parent, anchorMin, anchorMax, new Vector2(0.5f, 0.5f), Vector2.zero, Vector2.zero);
-            var text = rect.gameObject.AddComponent<Text>();
+            var text = rect.gameObject.AddComponent<TextMeshProUGUI>();
             text.text = value;
-            text.font = LoadDefaultFont();
+            text.font = LoadKaturiSdfFont();
             text.fontSize = fontSize;
-            text.fontStyle = fontStyle;
-            text.alignment = TextAnchor.MiddleCenter;
+            text.fontStyle = fontStyle == FontStyle.Bold ? FontStyles.Bold : FontStyles.Normal;
+            text.alignment = TextAlignmentOptions.Center;
             text.color = new Color(0.2f, 0.08f, 0.3f, 0.95f);
             text.raycastTarget = false;
             return text;
@@ -4204,10 +4630,112 @@ namespace GameKamiStreaming
                 : null;
         }
 
-        static Font LoadDefaultFont()
+        void ConvertExistingTextToKaturiSdf()
         {
-            var font = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
-            return font != null ? font : Resources.GetBuiltinResource<Font>("Arial.ttf");
+            if (canvasRoot == null)
+            {
+                return;
+            }
+
+            foreach (var legacyText in canvasRoot.GetComponentsInChildren<Text>(true))
+            {
+                var text = legacyText.GetComponent<TextMeshProUGUI>();
+                if (text == null)
+                {
+                    text = legacyText.gameObject.AddComponent<TextMeshProUGUI>();
+                }
+
+                text.text = legacyText.text;
+                text.font = LoadKaturiSdfFont();
+                text.fontSize = legacyText.fontSize;
+                text.fontStyle = legacyText.fontStyle == FontStyle.Bold ? FontStyles.Bold : FontStyles.Normal;
+                text.alignment = ConvertTextAlignment(legacyText.alignment);
+                text.color = legacyText.color;
+                text.raycastTarget = legacyText.raycastTarget;
+                text.enableAutoSizing = legacyText.resizeTextForBestFit;
+                text.fontSizeMin = legacyText.resizeTextMinSize;
+                text.fontSizeMax = legacyText.resizeTextMaxSize;
+                text.textWrappingMode = legacyText.horizontalOverflow == HorizontalWrapMode.Wrap
+                    ? TextWrappingModes.Normal
+                    : TextWrappingModes.NoWrap;
+                text.overflowMode = legacyText.verticalOverflow == VerticalWrapMode.Truncate
+                    ? TextOverflowModes.Truncate
+                    : TextOverflowModes.Overflow;
+                Destroy(legacyText);
+            }
+        }
+
+        void ShowStartScreen()
+        {
+            gameStarted = false;
+            if (canvasRoot != null)
+            {
+                canvasRoot.gameObject.SetActive(false);
+            }
+
+            if (skillTreeCanvasRoot != null)
+            {
+                skillTreeCanvasRoot.gameObject.SetActive(false);
+            }
+
+            if (startScreenCanvasRoot != null)
+            {
+                startScreenCanvasRoot.gameObject.SetActive(true);
+            }
+
+            if (endingVideoCanvasRoot != null)
+            {
+                endingVideoCanvasRoot.gameObject.SetActive(false);
+            }
+        }
+
+        void ShowEndingVideoCanvas()
+        {
+            if (canvasRoot != null)
+            {
+                canvasRoot.gameObject.SetActive(false);
+            }
+
+            if (skillTreeCanvasRoot != null)
+            {
+                skillTreeCanvasRoot.gameObject.SetActive(false);
+            }
+
+            if (startScreenCanvasRoot != null)
+            {
+                startScreenCanvasRoot.gameObject.SetActive(false);
+            }
+
+            if (endingVideoCanvasRoot != null)
+            {
+                endingVideoCanvasRoot.gameObject.SetActive(true);
+            }
+        }
+
+        static TMP_FontAsset LoadKaturiSdfFont()
+        {
+            if (katuriSdfFont == null)
+            {
+                katuriSdfFont = Resources.Load<TMP_FontAsset>(KaturiSdfFontPath);
+            }
+
+            return katuriSdfFont;
+        }
+
+        static TextAlignmentOptions ConvertTextAlignment(TextAnchor alignment)
+        {
+            switch (alignment)
+            {
+                case TextAnchor.UpperLeft: return TextAlignmentOptions.TopLeft;
+                case TextAnchor.UpperCenter: return TextAlignmentOptions.Top;
+                case TextAnchor.UpperRight: return TextAlignmentOptions.TopRight;
+                case TextAnchor.MiddleLeft: return TextAlignmentOptions.MidlineLeft;
+                case TextAnchor.MiddleRight: return TextAlignmentOptions.MidlineRight;
+                case TextAnchor.LowerLeft: return TextAlignmentOptions.BottomLeft;
+                case TextAnchor.LowerCenter: return TextAlignmentOptions.Bottom;
+                case TextAnchor.LowerRight: return TextAlignmentOptions.BottomRight;
+                default: return TextAlignmentOptions.Center;
+            }
         }
 
         static Sprite CreateCircleSprite(int size, Color fill, Color outline, float outlineThickness = 4f)

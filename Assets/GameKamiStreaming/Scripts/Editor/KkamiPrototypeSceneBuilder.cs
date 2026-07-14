@@ -98,6 +98,28 @@ namespace GameKamiStreamingEditor
             Debug.Log("Ensured editable skill tree canvas in scene: " + ScenePath);
         }
 
+        [MenuItem("GameKamiStreaming/Ensure Editable Start Screen")]
+        public static void EnsureEditableStartScreenInScene()
+        {
+            AssetDatabase.Refresh();
+            var scene = EditorSceneManager.OpenScene(ScenePath, OpenSceneMode.Single);
+            var game = Object.FindFirstObjectByType<KkamiPrototypeGame>();
+            if (game == null)
+            {
+                var bootstrap = new GameObject("KkamiPrototypeGame");
+                game = bootstrap.AddComponent<KkamiPrototypeGame>();
+            }
+
+            game.EnsureEditableStartScreen();
+            EnsurePersistentStartGameButton(game);
+            EditorUtility.SetDirty(game);
+            EditorSceneManager.MarkSceneDirty(scene);
+            EditorSceneManager.SaveScene(scene);
+            AssetDatabase.SaveAssets();
+            AssetDatabase.Refresh();
+            Debug.Log("Ensured editable start screen in scene: " + ScenePath);
+        }
+
         static void RemoveAutoAddedCameraData()
         {
             var camera = Camera.main;
@@ -137,6 +159,30 @@ namespace GameKamiStreamingEditor
                 }
 
                 UnityEventTools.AddPersistentListener(button.onClick, game.StartNextStageFromSkillTree);
+                EditorUtility.SetDirty(button);
+                return;
+            }
+        }
+
+        static void EnsurePersistentStartGameButton(KkamiPrototypeGame game)
+        {
+            var buttons = Object.FindObjectsByType<Button>(FindObjectsInactive.Include, FindObjectsSortMode.None);
+            foreach (var button in buttons)
+            {
+                if (button.name != "Start Game Button")
+                {
+                    continue;
+                }
+
+                for (var i = 0; i < button.onClick.GetPersistentEventCount(); i++)
+                {
+                    if (button.onClick.GetPersistentTarget(i) == game && button.onClick.GetPersistentMethodName(i) == nameof(KkamiPrototypeGame.StartGameFromStartScreen))
+                    {
+                        return;
+                    }
+                }
+
+                UnityEventTools.AddPersistentListener(button.onClick, game.StartGameFromStartScreen);
                 EditorUtility.SetDirty(button);
                 return;
             }
