@@ -59,6 +59,15 @@ namespace GameKamiStreaming
         const string NextStageButtonSpriteId = "next_stage_button";
         const string StartScreenBackgroundSpriteId = "start_screen";
         const string StartGameButtonSpriteId = "start_button";
+        const string OpeningLogoSpriteId = "opening_logo";
+        const string OpeningVideoRelativePath = "KkamiStreaming/opening.mp4";
+        const float OpeningLogoFadeInSeconds = 1.3f;
+        const float OpeningLogoFadeOutSeconds = 0.5f;
+        const float OpeningLogoFullBrightnessHoldSeconds = 0.3f;
+        const float OpeningLogoDarkBrightness = 0.06f;
+        const float UnscaledAnimationMaxDeltaSeconds = 1f / 30f;
+        const float OpeningLogoDisplaySize = 1680f;
+        const float OpeningVideoPrepareTimeoutSeconds = 15f;
         const string GameOverBackgroundSpriteId = "gameover";
         const string GameOverReturnButtonSpriteId = "go_to_first";
         static readonly Vector2 GameOverReturnButtonOffset = new Vector2(-36f, 36f);
@@ -129,9 +138,7 @@ namespace GameKamiStreaming
         static readonly Color FourthStageBackgroundColor = new Color(49f / 255f, 105f / 255f, 29f / 255f, 1f);
         static readonly Color FifthStageBackgroundColor = new Color(74f / 255f, 48f / 255f, 48f / 255f, 1f);
         const int BossKillPanelCount = 5;
-        const float BossFiveSlowMotionTimeScale = 1f / 3f;
-        const float BossFiveSlowMotionGameSeconds = 3f;
-        const float EndingBlackoutDurationSeconds = 0.3f;
+        const float EndingBlackoutDurationSeconds = 1f;
         static readonly int[] TemporaryStageJumpNumbers = { 9, 19, 29, 39, 49 };
         const float StageIndicatorNumberScale = 1.45f;
         const string StageIndicatorSpriteId = "stage_ui";
@@ -314,6 +321,10 @@ namespace GameKamiStreaming
         [SerializeField] RectTransform gameOverCanvasRoot;
         [SerializeField] RectTransform gameOverReturnButtonRoot;
         [SerializeField] Button gameOverReturnButton;
+        [SerializeField] RectTransform openingSequenceCanvasRoot;
+        [SerializeField] Image openingLogoImage;
+        [SerializeField] RawImage openingVideoImage;
+        [SerializeField] VideoPlayer openingVideoPlayer;
         [SerializeField] RectTransform endingVideoCanvasRoot;
         [SerializeField] RawImage endingVideoImage;
         [SerializeField] VideoPlayer endingVideoPlayer;
@@ -361,14 +372,18 @@ namespace GameKamiStreaming
         bool currentStageBossSpawned;
         bool currentStageBossDefeated;
         bool gameStarted;
+        bool openingSequencePlaying;
+        bool openingLogoPhase;
+        bool openingSkipRequested;
+        bool openingVideoCompleted;
+        bool openingVideoFailed;
         bool endingVideoPlaying;
         bool endingVideoCompleted;
         bool endingVideoFailed;
-        bool bossFiveSlowMotionActive;
         Material stageDesaturationMaterial;
         static TMP_FontAsset katuriSdfFont;
+        RenderTexture openingVideoRenderTexture;
         RenderTexture endingVideoRenderTexture;
-        float timeScaleBeforeBossFiveSlowMotion = 1f;
         float miningSpeedMultiplier = 1f;
         float miningRangeMultiplier = 1f;
         float miningDamageMultiplier = 1f;
@@ -476,12 +491,31 @@ namespace GameKamiStreaming
 
         void OnDestroy()
         {
-            RestoreBossFiveSlowMotion();
+            if (openingVideoPlayer != null)
+            {
+                openingVideoPlayer.loopPointReached -= HandleOpeningVideoCompleted;
+                openingVideoPlayer.errorReceived -= HandleOpeningVideoError;
+            }
+            if (openingVideoRenderTexture != null)
+            {
+                openingVideoRenderTexture.Release();
+                Destroy(openingVideoRenderTexture);
+                openingVideoRenderTexture = null;
+            }
         }
 
         void Update()
         {
             ApplyFixedGameAspectRatio();
+
+            if (openingSequencePlaying)
+            {
+                if (WasEscapePressedThisFrame())
+                {
+                    openingSkipRequested = true;
+                }
+                return;
+            }
 
             if (!gameStarted)
             {
@@ -562,10 +596,16 @@ namespace GameKamiStreaming
 
             ApplyFixedGameAspectRatio();
             EnsureStartScreenCanvas();
+            EnsureOpeningSequenceCanvas();
             EnsureEndingVideoCanvas();
             if (startScreenCanvasRoot != null)
             {
                 startScreenCanvasRoot.gameObject.SetActive(true);
+            }
+
+            if (openingSequenceCanvasRoot != null)
+            {
+                openingSequenceCanvasRoot.gameObject.SetActive(false);
             }
         }
 
@@ -644,6 +684,7 @@ namespace GameKamiStreaming
             EnsureBossFigurePanels();
             EnsureStartScreenCanvas();
             EnsureGameOverCanvas();
+            EnsureOpeningSequenceCanvas();
             EnsureEndingVideoCanvas();
             EnsureEndingBlackout();
             EnsureBgmAudioSource();
@@ -659,7 +700,7 @@ namespace GameKamiStreaming
             }
             RefreshMiningCursor();
             miningCursor.gameObject.SetActive(false);
-            ShowStartScreen();
+            BeginOpeningSequence();
         }
 
         void EnsureEffectLayer()
@@ -1051,6 +1092,304 @@ namespace GameKamiStreaming
             gameOverCanvasRoot.gameObject.SetActive(false);
         }
 
+        void EnsureOpeningSequenceCanvas()
+        {
+            if (openingSequenceCanvasRoot == null)
+            {
+                var canvas = new GameObject("Opening Sequence Canvas", typeof(RectTransform), typeof(Canvas), typeof(CanvasScaler), typeof(GraphicRaycaster)).GetComponent<Canvas>();
+                canvas.renderMode = RenderMode.ScreenSpaceCamera;
+                canvas.worldCamera = uiCamera;
+                canvas.planeDistance = 6f;
+                canvas.sortingOrder = 300;
+                ConfigureCanvasScaler(canvas.GetComponent<CanvasScaler>());
+                openingSequenceCanvasRoot = canvas.transform as RectTransform;
+            }
+            else
+            {
+                var canvas = openingSequenceCanvasRoot.GetComponent<Canvas>();
+                if (canvas != null)
+                {
+                    canvas.renderMode = RenderMode.ScreenSpaceCamera;
+                    canvas.worldCamera = uiCamera;
+                    canvas.planeDistance = 6f;
+                    canvas.sortingOrder = 300;
+                }
+
+                ConfigureCanvasScaler(openingSequenceCanvasRoot);
+            }
+
+            var backdrop = FindChildRect(openingSequenceCanvasRoot, "Opening Backdrop")?.GetComponent<Image>();
+            if (backdrop == null)
+            {
+                backdrop = AddFullScreenImage("Opening Backdrop", null, openingSequenceCanvasRoot, Color.black);
+            }
+            backdrop.color = Color.black;
+            backdrop.raycastTarget = false;
+            backdrop.rectTransform.SetAsFirstSibling();
+
+            if (openingLogoImage == null)
+            {
+                openingLogoImage = FindChildRect(openingSequenceCanvasRoot, "Opening Logo")?.GetComponent<Image>();
+            }
+            if (openingLogoImage == null)
+            {
+                var logoRect = CreateRect(
+                    "Opening Logo",
+                    openingSequenceCanvasRoot,
+                    new Vector2(0.5f, 0.5f),
+                    new Vector2(0.5f, 0.5f),
+                    new Vector2(0.5f, 0.5f),
+                    Vector2.zero,
+                    new Vector2(OpeningLogoDisplaySize, OpeningLogoDisplaySize));
+                openingLogoImage = logoRect.gameObject.AddComponent<Image>();
+            }
+            openingLogoImage.sprite = LoadSprite(OpeningLogoSpriteId);
+            openingLogoImage.preserveAspect = true;
+            openingLogoImage.raycastTarget = false;
+            openingLogoImage.rectTransform.anchorMin = new Vector2(0.5f, 0.5f);
+            openingLogoImage.rectTransform.anchorMax = new Vector2(0.5f, 0.5f);
+            openingLogoImage.rectTransform.pivot = new Vector2(0.5f, 0.5f);
+            openingLogoImage.rectTransform.anchoredPosition = Vector2.zero;
+            openingLogoImage.rectTransform.sizeDelta = new Vector2(OpeningLogoDisplaySize, OpeningLogoDisplaySize);
+            openingLogoImage.rectTransform.localScale = Vector3.one;
+            SetOpeningLogoBrightness(openingLogoImage, OpeningLogoDarkBrightness);
+
+            if (openingVideoImage == null)
+            {
+                openingVideoImage = FindChildRect(openingSequenceCanvasRoot, "Opening Video")?.GetComponent<RawImage>();
+            }
+            if (openingVideoImage == null)
+            {
+                var videoRect = CreateRect("Opening Video", openingSequenceCanvasRoot, Vector2.zero, Vector2.one, new Vector2(0.5f, 0.5f), Vector2.zero, Vector2.zero);
+                openingVideoImage = videoRect.gameObject.AddComponent<RawImage>();
+            }
+            openingVideoImage.color = Color.white;
+            openingVideoImage.raycastTarget = false;
+            openingVideoImage.rectTransform.SetAsLastSibling();
+
+            if (openingVideoPlayer == null)
+            {
+                openingVideoPlayer = openingSequenceCanvasRoot.GetComponent<VideoPlayer>();
+            }
+            if (openingVideoPlayer == null)
+            {
+                openingVideoPlayer = openingSequenceCanvasRoot.gameObject.AddComponent<VideoPlayer>();
+            }
+
+            openingVideoPlayer.source = VideoSource.Url;
+            openingVideoPlayer.renderMode = VideoRenderMode.RenderTexture;
+            openingVideoPlayer.playOnAwake = false;
+            openingVideoPlayer.waitForFirstFrame = true;
+            openingVideoPlayer.skipOnDrop = true;
+            openingVideoPlayer.isLooping = false;
+            openingVideoPlayer.aspectRatio = VideoAspectRatio.FitInside;
+            openingVideoPlayer.audioOutputMode = VideoAudioOutputMode.Direct;
+            openingVideoPlayer.loopPointReached -= HandleOpeningVideoCompleted;
+            openingVideoPlayer.loopPointReached += HandleOpeningVideoCompleted;
+            openingVideoPlayer.errorReceived -= HandleOpeningVideoError;
+            openingVideoPlayer.errorReceived += HandleOpeningVideoError;
+
+            if (Application.isPlaying)
+            {
+                if (openingVideoRenderTexture == null)
+                {
+                    openingVideoRenderTexture = new RenderTexture(1920, 1080, 0, RenderTextureFormat.ARGB32)
+                    {
+                        name = "Opening Video Render Texture"
+                    };
+                    openingVideoRenderTexture.Create();
+                }
+
+                openingVideoPlayer.targetTexture = openingVideoRenderTexture;
+                openingVideoImage.texture = openingVideoRenderTexture;
+            }
+
+            openingLogoImage.gameObject.SetActive(false);
+            openingVideoImage.gameObject.SetActive(false);
+            if (!openingSequencePlaying)
+            {
+                openingSequenceCanvasRoot.gameObject.SetActive(false);
+            }
+        }
+
+        void BeginOpeningSequence()
+        {
+            if (openingSequencePlaying)
+            {
+                return;
+            }
+
+            openingSequencePlaying = true;
+            openingSkipRequested = false;
+            openingVideoCompleted = false;
+            openingVideoFailed = false;
+            gameStarted = false;
+            skillTreeOpen = false;
+            StopBgm();
+
+            if (canvasRoot != null)
+            {
+                canvasRoot.gameObject.SetActive(false);
+            }
+            if (skillTreeCanvasRoot != null)
+            {
+                skillTreeCanvasRoot.gameObject.SetActive(false);
+            }
+            if (startScreenCanvasRoot != null)
+            {
+                startScreenCanvasRoot.gameObject.SetActive(false);
+            }
+            if (gameOverCanvasRoot != null)
+            {
+                gameOverCanvasRoot.gameObject.SetActive(false);
+            }
+            if (endingVideoCanvasRoot != null)
+            {
+                endingVideoCanvasRoot.gameObject.SetActive(false);
+            }
+            if (openingSequenceCanvasRoot != null)
+            {
+                openingSequenceCanvasRoot.gameObject.SetActive(true);
+            }
+
+            StartCoroutine(PlayOpeningSequence());
+        }
+
+        IEnumerator PlayOpeningSequence()
+        {
+            EnsureOpeningSequenceCanvas();
+            openingLogoPhase = true;
+            openingSkipRequested = false;
+            openingVideoCompleted = false;
+            openingVideoFailed = false;
+
+            if (openingVideoPlayer != null)
+            {
+                openingVideoPlayer.Stop();
+            }
+
+            if (openingVideoImage != null)
+            {
+                openingVideoImage.gameObject.SetActive(false);
+            }
+            if (openingLogoImage != null)
+            {
+                openingLogoImage.gameObject.SetActive(true);
+                SetOpeningLogoBrightness(openingLogoImage, OpeningLogoDarkBrightness);
+            }
+
+            var elapsed = 0f;
+            while (elapsed < OpeningLogoFadeInSeconds && !openingSkipRequested)
+            {
+                elapsed += GetUnscaledAnimationDeltaTime();
+                var progress = Mathf.Clamp01(elapsed / OpeningLogoFadeInSeconds);
+                SetOpeningLogoBrightness(openingLogoImage, Mathf.Lerp(OpeningLogoDarkBrightness, 1f, Mathf.SmoothStep(0f, 1f, progress)));
+                yield return null;
+            }
+
+            if (!openingSkipRequested)
+            {
+                SetOpeningLogoBrightness(openingLogoImage, 1f);
+                elapsed = 0f;
+                while (elapsed < OpeningLogoFullBrightnessHoldSeconds && !openingSkipRequested)
+                {
+                    elapsed += GetUnscaledAnimationDeltaTime();
+                    yield return null;
+                }
+
+                elapsed = 0f;
+                while (elapsed < OpeningLogoFadeOutSeconds && !openingSkipRequested)
+                {
+                    elapsed += GetUnscaledAnimationDeltaTime();
+                    var progress = Mathf.Clamp01(elapsed / OpeningLogoFadeOutSeconds);
+                    SetOpeningLogoBrightness(openingLogoImage, Mathf.Lerp(1f, OpeningLogoDarkBrightness, Mathf.SmoothStep(0f, 1f, progress)));
+                    yield return null;
+                }
+            }
+
+            SetOpeningLogoBrightness(openingLogoImage, OpeningLogoDarkBrightness);
+            if (openingLogoImage != null)
+            {
+                openingLogoImage.gameObject.SetActive(false);
+            }
+
+            openingLogoPhase = false;
+            openingSkipRequested = false;
+            if (openingVideoPlayer == null || openingVideoImage == null)
+            {
+                CompleteOpeningSequence();
+                yield break;
+            }
+
+            openingVideoPlayer.url = Path.Combine(Application.streamingAssetsPath, OpeningVideoRelativePath);
+            openingVideoPlayer.Prepare();
+
+            var prepareElapsed = 0f;
+            while (!openingVideoPlayer.isPrepared && !openingVideoFailed && !openingSkipRequested && prepareElapsed < OpeningVideoPrepareTimeoutSeconds)
+            {
+                prepareElapsed += Time.unscaledDeltaTime;
+                yield return null;
+            }
+
+            if (openingSkipRequested || openingVideoFailed || !openingVideoPlayer.isPrepared)
+            {
+                CompleteOpeningSequence();
+                yield break;
+            }
+
+            // Keep the start screen rendered behind the opening canvas so the
+            // final video frame can switch to it without exposing the black backdrop.
+            if (startScreenCanvasRoot != null)
+            {
+                startScreenCanvasRoot.gameObject.SetActive(true);
+            }
+
+            openingVideoImage.gameObject.SetActive(true);
+            openingVideoPlayer.Play();
+            while (!openingVideoCompleted && !openingVideoFailed && !openingSkipRequested)
+            {
+                yield return null;
+            }
+
+            CompleteOpeningSequence();
+        }
+
+        void CompleteOpeningSequence()
+        {
+            if (!openingSequencePlaying)
+            {
+                return;
+            }
+
+            // Hide the video canvas before stopping the player. Stop can clear its
+            // render texture, which otherwise produces a visible black flash.
+            if (openingSequenceCanvasRoot != null)
+            {
+                openingSequenceCanvasRoot.gameObject.SetActive(false);
+            }
+            if (openingVideoPlayer != null)
+            {
+                openingVideoPlayer.Stop();
+            }
+
+            openingSequencePlaying = false;
+            openingLogoPhase = false;
+            openingSkipRequested = false;
+            ShowStartScreen();
+        }
+
+        void HandleOpeningVideoCompleted(VideoPlayer source)
+        {
+            openingVideoCompleted = true;
+            CompleteOpeningSequence();
+        }
+
+        void HandleOpeningVideoError(VideoPlayer source, string message)
+        {
+            openingVideoFailed = true;
+            Debug.LogWarning("Unable to play the opening video: " + message);
+        }
+
         void EnsureEndingVideoCanvas()
         {
             if (endingVideoCanvasRoot == null)
@@ -1157,15 +1496,6 @@ namespace GameKamiStreaming
                 endingVideoPlayer.Prepare();
             }
 
-            BeginBossFiveSlowMotion();
-            var slowMotionElapsed = 0f;
-            while (slowMotionElapsed < BossFiveSlowMotionGameSeconds)
-            {
-                slowMotionElapsed += Time.deltaTime;
-                yield return null;
-            }
-            RestoreBossFiveSlowMotion();
-
             yield return FadeEndingBlackout();
 
             if (endingVideoPlayer == null || endingVideoCanvasRoot == null || endingVideoFailed)
@@ -1194,29 +1524,6 @@ namespace GameKamiStreaming
             }
 
             ReturnToStartScreenAfterEnding();
-        }
-
-        void BeginBossFiveSlowMotion()
-        {
-            if (bossFiveSlowMotionActive)
-            {
-                return;
-            }
-
-            timeScaleBeforeBossFiveSlowMotion = Mathf.Max(0.01f, Time.timeScale);
-            Time.timeScale = timeScaleBeforeBossFiveSlowMotion * BossFiveSlowMotionTimeScale;
-            bossFiveSlowMotionActive = true;
-        }
-
-        void RestoreBossFiveSlowMotion()
-        {
-            if (!bossFiveSlowMotionActive)
-            {
-                return;
-            }
-
-            Time.timeScale = timeScaleBeforeBossFiveSlowMotion;
-            bossFiveSlowMotionActive = false;
         }
 
         void EnsureEndingBlackout()
@@ -1256,7 +1563,7 @@ namespace GameKamiStreaming
             var elapsed = 0f;
             while (elapsed < EndingBlackoutDurationSeconds)
             {
-                elapsed += Time.unscaledDeltaTime;
+                elapsed += GetUnscaledAnimationDeltaTime();
                 SetImageAlpha(endingBlackoutImage, Mathf.Clamp01(elapsed / EndingBlackoutDurationSeconds));
                 yield return null;
             }
@@ -1277,7 +1584,6 @@ namespace GameKamiStreaming
 
         void ReturnToStartScreenAfterEnding()
         {
-            RestoreBossFiveSlowMotion();
             if (endingVideoPlayer != null)
             {
                 endingVideoPlayer.Stop();
@@ -1290,6 +1596,7 @@ namespace GameKamiStreaming
             }
 
             ResetBossProgressDisplays();
+            ResetRunProgressForNewGame();
 
             if (endingBlackoutImage != null)
             {
@@ -1299,6 +1606,53 @@ namespace GameKamiStreaming
 
             endingVideoPlaying = false;
             ShowStartScreen();
+        }
+
+        void ResetRunProgressForNewGame()
+        {
+            ResetResourcesForNewRun();
+            ResetSkillUpgradesForNewRun();
+        }
+
+        void ResetResourcesForNewRun()
+        {
+            if (resourceManager == null || database == null)
+            {
+                return;
+            }
+
+            resourceManager.Initialize(database.Resources);
+            RefreshAllResourceLabels();
+            RefreshSkillTreeButtonStates();
+        }
+
+        void ResetSkillUpgradesForNewRun()
+        {
+            skillUpgradeCounts.Clear();
+            miningSpeedMultiplier = 1f;
+            miningRangeMultiplier = 1f;
+            miningDamageMultiplier = 1f;
+            pieceSpawnSpeedMultiplier = 1f;
+            miningEfficiencyMultiplier = 1f;
+            managerCount = 0;
+            managerRangeMultiplier = 1f;
+            managerDamageMultiplier = 1f;
+            managerSpeedMultiplier = 1f;
+
+            if (managerRoutine != null)
+            {
+                StopCoroutine(managerRoutine);
+                managerRoutine = null;
+            }
+
+            ResetManagerAgents();
+            SetManagerDisplayVisible(false);
+            RefreshMiningCursor();
+            RefreshSkillTreeButtonStates();
+            if (skillTreeTooltipRoot != null)
+            {
+                skillTreeTooltipRoot.gameObject.SetActive(false);
+            }
         }
 
         void BuildScene()
@@ -2101,6 +2455,22 @@ namespace GameKamiStreaming
             var color = image.color;
             color.a = Mathf.Clamp01(alpha);
             image.color = color;
+        }
+
+        static void SetOpeningLogoBrightness(Image image, float brightness)
+        {
+            if (image == null)
+            {
+                return;
+            }
+
+            var value = Mathf.Clamp01(brightness);
+            image.color = new Color(value, value, value, 1f);
+        }
+
+        static float GetUnscaledAnimationDeltaTime()
+        {
+            return Mathf.Min(Mathf.Max(0f, Time.unscaledDeltaTime), UnscaledAnimationMaxDeltaSeconds);
         }
 
         void UpdateChattingAppear()
@@ -3707,6 +4077,9 @@ namespace GameKamiStreaming
                 return;
             }
 
+            // A start-screen launch always begins a new run. This is intentionally
+            // not used by skill-tree stage transitions, where upgrades must persist.
+            ResetRunProgressForNewGame();
             gameStarted = true;
             ShowGameCanvas();
             PlayBgmForStage(GetCurrentStageNumber(), false);
@@ -3897,6 +4270,11 @@ namespace GameKamiStreaming
 
         void ShowGameCanvas()
         {
+            if (openingSequenceCanvasRoot != null)
+            {
+                openingSequenceCanvasRoot.gameObject.SetActive(false);
+            }
+
             if (canvasRoot != null)
             {
                 canvasRoot.gameObject.SetActive(true);
@@ -4035,7 +4413,8 @@ namespace GameKamiStreaming
             var size = definition != null ? definition.size : 260f;
             var bossVisualSize = new Vector2(size, size);
             EnsurePieceDisplayLayer();
-            if (!TryPickBossSpawnPosition(bossVisualSize, out var displayPosition) && !TryGetSpawnCenter(out displayPosition))
+            var keepFullVisualInsideBoard = bossPiece.pieceId == 30002;
+            if (!TryPickBossSpawnPosition(bossVisualSize, keepFullVisualInsideBoard, out var displayPosition) && !TryGetSpawnCenter(out displayPosition))
             {
                 return;
             }
@@ -4260,27 +4639,27 @@ namespace GameKamiStreaming
             return false;
         }
 
-        bool TryPickBossSpawnPosition(Vector2 bossVisualSize, out Vector2 position)
+        bool TryPickBossSpawnPosition(Vector2 bossVisualSize, bool keepFullVisualInsideBoard, out Vector2 position)
         {
             position = Vector2.zero;
-            return TryGetSpawnPolygon(out var polygon) && TryPickBossSpawnPosition(bossVisualSize, polygon, out position);
+            return TryGetSpawnPolygon(out var polygon) && TryPickBossSpawnPosition(bossVisualSize, polygon, keepFullVisualInsideBoard, out position);
         }
 
-        static bool TryPickBossSpawnPosition(Vector2 bossVisualSize, Vector2[] polygon, out Vector2 position)
+        static bool TryPickBossSpawnPosition(Vector2 bossVisualSize, Vector2[] polygon, bool keepFullVisualInsideBoard, out Vector2 position)
         {
             var centroid = GetCentroid(polygon);
             position = centroid;
             for (var i = 0; i < 48; i++)
             {
                 var candidate = SamplePointInPolygon(polygon);
-                if (IsBossMovementFootprintInsidePolygon(candidate, bossVisualSize, polygon))
+                if (IsBossPositionInsideBoard(candidate, bossVisualSize, polygon, keepFullVisualInsideBoard))
                 {
                     position = candidate;
                     return true;
                 }
             }
 
-            return TryFindBossGridSpawnPosition(polygon, bossVisualSize, centroid, out position);
+            return TryFindBossGridSpawnPosition(polygon, bossVisualSize, centroid, keepFullVisualInsideBoard, out position);
         }
 
         bool TryGetSpawnCenter(out Vector2 position)
@@ -4304,6 +4683,7 @@ namespace GameKamiStreaming
             }
 
             var bossVisualSize = GetBossVisualSize(bossTransform);
+            var keepFullVisualInsideBoard = IsBossTwo(bossTransform);
             var currentPosition = bossTransform.anchoredPosition;
             var minimumDistance = Mathf.Max(Mathf.Max(bossVisualSize.x, bossVisualSize.y) * 0.7f, 160f);
             var bestCandidate = currentPosition;
@@ -4311,7 +4691,7 @@ namespace GameKamiStreaming
 
             for (var i = 0; i < 32; i++)
             {
-                if (!TryPickBossSpawnPosition(bossVisualSize, polygon, out var candidate))
+                if (!TryPickBossSpawnPosition(bossVisualSize, polygon, keepFullVisualInsideBoard, out var candidate))
                 {
                     continue;
                 }
@@ -4336,7 +4716,7 @@ namespace GameKamiStreaming
             }
 
             var center = GetCentroid(polygon);
-            if (IsBossMovementFootprintInsidePolygon(center, bossVisualSize, polygon))
+            if (IsBossPositionInsideBoard(center, bossVisualSize, polygon, keepFullVisualInsideBoard))
             {
                 position = center;
                 return true;
@@ -4379,11 +4759,12 @@ namespace GameKamiStreaming
             // Every boss now uses the same bottom-footprint rule regardless of this legacy scale.
             _ = boundsScale;
             var bossVisualSize = GetBossVisualSize(bossTransform);
+            var keepFullVisualInsideBoard = IsBossTwo(bossTransform);
             var currentPosition = bossTransform.anchoredPosition;
             var center = GetCentroid(polygon);
-            if (!IsBossMovementFootprintInsidePolygon(currentPosition, bossVisualSize, polygon))
+            if (!IsBossPositionInsideBoard(currentPosition, bossVisualSize, polygon, keepFullVisualInsideBoard))
             {
-                if (!IsBossMovementFootprintInsidePolygon(center, bossVisualSize, polygon))
+                if (!IsBossPositionInsideBoard(center, bossVisualSize, polygon, keepFullVisualInsideBoard))
                 {
                     return false;
                 }
@@ -4397,13 +4778,13 @@ namespace GameKamiStreaming
             for (var bounce = 0; bounce <= MaxBounceCount && remainingDistance > 1f; bounce++)
             {
                 var candidate = currentPosition + outgoingDirection * remainingDistance;
-                if (IsBossMovementFootprintInsidePolygon(candidate, bossVisualSize, polygon))
+                if (IsBossPositionInsideBoard(candidate, bossVisualSize, polygon, keepFullVisualInsideBoard))
                 {
                     path?.Add(candidate);
                     return path == null || path.Count > 0;
                 }
 
-                var travelDistance = FindMaxBossInsideTravelDistance(currentPosition, outgoingDirection, remainingDistance, bossVisualSize, polygon);
+                var travelDistance = FindMaxBossInsideTravelDistance(currentPosition, outgoingDirection, remainingDistance, bossVisualSize, polygon, keepFullVisualInsideBoard);
                 if (travelDistance > 0.5f)
                 {
                     currentPosition += outgoingDirection * travelDistance;
@@ -4415,9 +4796,9 @@ namespace GameKamiStreaming
                     remainingDistance = Mathf.Max(0f, remainingDistance - 1f);
                 }
 
-                var normal = FindBossBounceNormal(currentPosition + outgoingDirection * 2f, bossVisualSize, polygon);
+                var normal = FindBossBounceNormal(currentPosition + outgoingDirection * 2f, bossVisualSize, polygon, keepFullVisualInsideBoard);
                 outgoingDirection = Vector2.Reflect(outgoingDirection, normal).normalized;
-                if (outgoingDirection.sqrMagnitude <= 0.001f || !IsBossMovementFootprintInsidePolygon(currentPosition + outgoingDirection * 2f, bossVisualSize, polygon))
+                if (outgoingDirection.sqrMagnitude <= 0.001f || !IsBossPositionInsideBoard(currentPosition + outgoingDirection * 2f, bossVisualSize, polygon, keepFullVisualInsideBoard))
                 {
                     outgoingDirection = (center - currentPosition).sqrMagnitude > 0.001f ? (center - currentPosition).normalized : Vector2.right;
                 }
@@ -4428,7 +4809,7 @@ namespace GameKamiStreaming
                 return true;
             }
 
-            if (IsBossMovementFootprintInsidePolygon(center, bossVisualSize, polygon))
+            if (IsBossPositionInsideBoard(center, bossVisualSize, polygon, keepFullVisualInsideBoard))
             {
                 path?.Add(center);
                 outgoingDirection = (center - currentPosition).sqrMagnitude > 0.001f ? (center - currentPosition).normalized : outgoingDirection;
@@ -4459,7 +4840,7 @@ namespace GameKamiStreaming
             return low;
         }
 
-        static float FindMaxBossInsideTravelDistance(Vector2 origin, Vector2 direction, float maxDistance, Vector2 bossVisualSize, Vector2[] polygon)
+        static float FindMaxBossInsideTravelDistance(Vector2 origin, Vector2 direction, float maxDistance, Vector2 bossVisualSize, Vector2[] polygon, bool keepFullVisualInsideBoard)
         {
             var low = 0f;
             var high = maxDistance;
@@ -4467,7 +4848,7 @@ namespace GameKamiStreaming
             {
                 var mid = (low + high) * 0.5f;
                 var candidate = origin + direction * mid;
-                if (IsBossMovementFootprintInsidePolygon(candidate, bossVisualSize, polygon))
+                if (IsBossPositionInsideBoard(candidate, bossVisualSize, polygon, keepFullVisualInsideBoard))
                 {
                     low = mid;
                 }
@@ -4480,9 +4861,11 @@ namespace GameKamiStreaming
             return low;
         }
 
-        static Vector2 FindBossBounceNormal(Vector2 outsideCenter, Vector2 bossVisualSize, Vector2[] polygon)
+        static Vector2 FindBossBounceNormal(Vector2 outsideCenter, Vector2 bossVisualSize, Vector2[] polygon, bool keepFullVisualInsideBoard)
         {
-            var corners = GetBossMovementFootprintPoints(outsideCenter, bossVisualSize);
+            var corners = keepFullVisualInsideBoard
+                ? GetBossFullVisualPoints(outsideCenter, bossVisualSize)
+                : GetBossMovementFootprintPoints(outsideCenter, bossVisualSize);
             var signedArea = GetSignedArea(polygon);
             var bestNormal = Vector2.up;
             var smallestDistance = float.MaxValue;
@@ -4752,6 +5135,36 @@ namespace GameKamiStreaming
             return true;
         }
 
+        static bool IsBossPositionInsideBoard(Vector2 bossCenter, Vector2 bossVisualSize, Vector2[] polygon, bool keepFullVisualInsideBoard)
+        {
+            if (!IsBossMovementFootprintInsidePolygon(bossCenter, bossVisualSize, polygon))
+            {
+                return false;
+            }
+
+            if (!keepFullVisualInsideBoard)
+            {
+                return true;
+            }
+
+            var visualPoints = GetBossFullVisualPoints(bossCenter, bossVisualSize);
+            for (var i = 0; i < visualPoints.Length; i++)
+            {
+                if (!IsPointInsideConvexPolygon(visualPoints[i], polygon))
+                {
+                    return false;
+                }
+            }
+
+            return true;
+        }
+
+        static bool IsBossTwo(RectTransform bossTransform)
+        {
+            var pieceView = bossTransform != null ? bossTransform.GetComponent<DestructiblePieceView>() : null;
+            return pieceView != null && pieceView.Piece != null && pieceView.Piece.pieceId == 30002;
+        }
+
         static Vector2[] GetBossMovementFootprintPoints(Vector2 bossCenter, Vector2 bossVisualSize)
         {
             var width = Mathf.Max(1f, Mathf.Abs(bossVisualSize.x));
@@ -4765,6 +5178,19 @@ namespace GameKamiStreaming
                 new Vector2(bossCenter.x - footprintHalfWidth, footprintTop),
                 new Vector2(bossCenter.x + footprintHalfWidth, footprintTop),
                 new Vector2(bossCenter.x + footprintHalfWidth, footprintBottom)
+            };
+        }
+
+        static Vector2[] GetBossFullVisualPoints(Vector2 bossCenter, Vector2 bossVisualSize)
+        {
+            var halfWidth = Mathf.Max(0.5f, Mathf.Abs(bossVisualSize.x) * 0.5f);
+            var halfHeight = Mathf.Max(0.5f, Mathf.Abs(bossVisualSize.y) * 0.5f);
+            return new[]
+            {
+                bossCenter + new Vector2(-halfWidth, -halfHeight),
+                bossCenter + new Vector2(-halfWidth, halfHeight),
+                bossCenter + new Vector2(halfWidth, halfHeight),
+                bossCenter + new Vector2(halfWidth, -halfHeight)
             };
         }
 
@@ -4803,7 +5229,7 @@ namespace GameKamiStreaming
             return found;
         }
 
-        static bool TryFindBossGridSpawnPosition(Vector2[] polygon, Vector2 bossVisualSize, Vector2 centroid, out Vector2 result)
+        static bool TryFindBossGridSpawnPosition(Vector2[] polygon, Vector2 bossVisualSize, Vector2 centroid, bool keepFullVisualInsideBoard, out Vector2 result)
         {
             result = centroid;
             GetPolygonBounds(polygon, out var min, out var max);
@@ -4818,7 +5244,7 @@ namespace GameKamiStreaming
                     var candidate = new Vector2(
                         Mathf.Lerp(min.x, max.x, x / (float)divisions),
                         Mathf.Lerp(min.y, max.y, y / (float)divisions));
-                    if (!IsBossMovementFootprintInsidePolygon(candidate, bossVisualSize, polygon))
+                    if (!IsBossPositionInsideBoard(candidate, bossVisualSize, polygon, keepFullVisualInsideBoard))
                     {
                         continue;
                     }
@@ -5304,6 +5730,21 @@ namespace GameKamiStreaming
 #endif
         }
 
+        static bool WasEscapePressedThisFrame()
+        {
+#if ENABLE_INPUT_SYSTEM
+            if (Keyboard.current != null && Keyboard.current.escapeKey.wasPressedThisFrame)
+            {
+                return true;
+            }
+#endif
+#if ENABLE_LEGACY_INPUT_MANAGER
+            return Input.GetKeyDown(KeyCode.Escape);
+#else
+            return false;
+#endif
+        }
+
         static bool TryGetLeftMouseButton()
         {
 #if ENABLE_INPUT_SYSTEM
@@ -5472,6 +5913,10 @@ namespace GameKamiStreaming
         void ShowStartScreen()
         {
             gameStarted = false;
+            if (openingSequenceCanvasRoot != null)
+            {
+                openingSequenceCanvasRoot.gameObject.SetActive(false);
+            }
             if (canvasRoot != null)
             {
                 canvasRoot.gameObject.SetActive(false);
@@ -5506,8 +5951,7 @@ namespace GameKamiStreaming
             skillTreeOpen = false;
             HideMiningAttack();
             ClearActivePieces();
-            ResetManagerAgents();
-            SetManagerDisplayVisible(false);
+            ResetRunProgressForNewGame();
             StopBgm();
             EnsureGameOverCanvas();
 
@@ -5540,7 +5984,7 @@ namespace GameKamiStreaming
         public void ReturnToFirstScreenFromGameOver()
         {
             ClearActivePieces();
-            ResetManagerAgents();
+            ResetRunProgressForNewGame();
             if (stageManager != null)
             {
                 stageManager.SelectByStageId(StageIdSpriteBase, 0);
@@ -5557,6 +6001,10 @@ namespace GameKamiStreaming
         void ShowEndingVideoCanvas()
         {
             StopBgm();
+            if (openingSequenceCanvasRoot != null)
+            {
+                openingSequenceCanvasRoot.gameObject.SetActive(false);
+            }
             if (canvasRoot != null)
             {
                 canvasRoot.gameObject.SetActive(false);
