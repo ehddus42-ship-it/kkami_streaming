@@ -40,14 +40,20 @@ namespace GameKamiStreaming
         const float ManagerDisplaySize = 150f;
         const float ManagerDirectionOffsetDegrees = 20f;
         const float ManagerBossOneSpeedFactor = 0.5f;
+        const float ManagerBaseMoveSpeedMultiplier = 4f;
+        const int TestResourceGrantAmount = 1500;
         const float KkamiAppearIntervalSeconds = 5f;
         const float ChatAppearIntervalSeconds = 2.2f;
         const int MaxVisibleChatMessages = 7;
         const float SkillTreeContentSize = 4200f;
         const float InitialSkillTreeZoom = 0.6f;
-        const float SkillTreeMinZoom = 0.55f;
+        const float SkillTreeMinZoom = InitialSkillTreeZoom;
         const float SkillTreeMaxZoom = 2.5f;
         const float SkillTreeZoomStep = 0.18f;
+        const float SkillTreeButtonCenteringFactor = 0.9f;
+        const float SkillTreeButtonCenteringThreshold = 450f;
+        const float SkillTreeTooltipPointerPadding = 28f;
+        const float SkillTreeTooltipButtonPadding = 12f;
         const float StageImageSaturation = 0.82f;
         const float StageImageBrightness = 0.98f;
         const string SkillTreeBackgroundSpriteId = "skilltree_bg";
@@ -76,6 +82,28 @@ namespace GameKamiStreaming
         const string BossFigureSpritePrefix = "boss";
         const float BossFigureDisplaySize = 136f;
         const string BgmResourceRoot = "GameKamiStreaming/Audio/BGM/";
+        static readonly Vector2[] SkillTreeTooltipAnchors =
+        {
+            new Vector2(1f, 1f),
+            new Vector2(0f, 1f),
+            new Vector2(0f, 0f),
+            new Vector2(1f, 0f)
+        };
+        static readonly Vector2[] SkillTreeTooltipPositions =
+        {
+            new Vector2(-44f, -150f),
+            new Vector2(44f, -150f),
+            new Vector2(44f, 150f),
+            new Vector2(-44f, 150f)
+        };
+        static readonly Vector2Int[] CommonResolutionOptions =
+        {
+            new Vector2Int(1280, 720),
+            new Vector2Int(1600, 900),
+            new Vector2Int(1920, 1080),
+            new Vector2Int(2560, 1440),
+            new Vector2Int(3840, 2160)
+        };
         static readonly string[] StageRangeBgmClipIds =
         {
             "stage_01_10",
@@ -291,6 +319,7 @@ namespace GameKamiStreaming
         readonly Dictionary<int, PixelNumberLabel> resourceLabels = new Dictionary<int, PixelNumberLabel>();
         readonly Dictionary<int, PixelNumberLabel> skillTreeResourceLabels = new Dictionary<int, PixelNumberLabel>();
         readonly Dictionary<string, SkillTreeRow> skillTreeRowsByKey = new Dictionary<string, SkillTreeRow>();
+        readonly Dictionary<string, Vector2> skillTreeButtonInitialPositions = new Dictionary<string, Vector2>();
         readonly Dictionary<string, int> skillUpgradeCounts = new Dictionary<string, int>();
         readonly Dictionary<string, List<Sprite>> bossAnimationFrames = new Dictionary<string, List<Sprite>>();
         readonly List<Sprite> miningAttackFrames = new List<Sprite>();
@@ -313,6 +342,8 @@ namespace GameKamiStreaming
         [SerializeField] RectTransform miningCursor;
         [SerializeField] PixelNumberLabel roundTimerLabel;
         [SerializeField] RectTransform skillTreeCanvasRoot;
+        [SerializeField] RectTransform resolutionSelectionCanvasRoot;
+        TextMeshProUGUI resolutionStatusText;
         [SerializeField] RectTransform startScreenCanvasRoot;
         [SerializeField] RectTransform startGameButtonRoot;
         [SerializeField] Vector2 startGameButtonOffset = new Vector2(-56f, 56f);
@@ -362,10 +393,14 @@ namespace GameKamiStreaming
         float kkamiAppearTimer;
         float chatAppearTimer;
         float skillTreeZoom = InitialSkillTreeZoom;
+        float skillTreeButtonAppliedCenteringFactor = 1f;
         Vector2 previousSkillTreePointerPosition;
+        Vector2 skillTreeTooltipPointerPosition;
+        RectTransform skillTreeTooltipTarget;
         int lastKkamiAppearIndex = -1;
         int displayedRoundSecond = -1;
         bool skillTreeOpen;
+        bool skillTreeButtonLayoutInitialized;
         bool miningAttackPlaying;
         bool kkamiAppearChanging;
         bool skillTreeDragging;
@@ -380,6 +415,7 @@ namespace GameKamiStreaming
         bool endingVideoPlaying;
         bool endingVideoCompleted;
         bool endingVideoFailed;
+        bool resolutionSelectionLocked;
         Material stageDesaturationMaterial;
         static TMP_FontAsset katuriSdfFont;
         RenderTexture openingVideoRenderTexture;
@@ -453,7 +489,7 @@ namespace GameKamiStreaming
             {
                 if (owner != null)
                 {
-                    owner.ShowSkillTreeTooltip(row);
+                    owner.ShowSkillTreeTooltip(row, transform as RectTransform, eventData.position);
                 }
             }
 
@@ -687,6 +723,7 @@ namespace GameKamiStreaming
             EnsureOpeningSequenceCanvas();
             EnsureEndingVideoCanvas();
             EnsureEndingBlackout();
+            EnsureResolutionSelectionCanvas();
             EnsureBgmAudioSource();
             RefreshAllResourceLabels();
             ApplyCurrentStageSprite();
@@ -700,7 +737,7 @@ namespace GameKamiStreaming
             }
             RefreshMiningCursor();
             miningCursor.gameObject.SetActive(false);
-            BeginOpeningSequence();
+            ShowResolutionSelection();
         }
 
         void EnsureEffectLayer()
@@ -910,8 +947,9 @@ namespace GameKamiStreaming
 
             scaler.uiScaleMode = CanvasScaler.ScaleMode.ScaleWithScreenSize;
             scaler.referenceResolution = FixedGameReferenceResolution;
-            scaler.screenMatchMode = CanvasScaler.ScreenMatchMode.MatchWidthOrHeight;
-            scaler.matchWidthOrHeight = 0.5f;
+            // The camera letterboxes/pillarboxes to 16:9. Expanding the canvas by the
+            // smaller screen axis keeps the full 1920x1080 UI inside that viewport.
+            scaler.screenMatchMode = CanvasScaler.ScreenMatchMode.Expand;
         }
 
         static void ConfigureCanvasScaler(RectTransform root)
@@ -919,6 +957,229 @@ namespace GameKamiStreaming
             if (root != null)
             {
                 ConfigureCanvasScaler(root.GetComponent<CanvasScaler>());
+            }
+        }
+
+        void EnsureResolutionSelectionCanvas()
+        {
+            if (resolutionSelectionCanvasRoot != null)
+            {
+                return;
+            }
+
+            var canvas = new GameObject("Resolution Selection Canvas", typeof(RectTransform), typeof(Canvas), typeof(CanvasScaler), typeof(GraphicRaycaster)).GetComponent<Canvas>();
+            canvas.renderMode = RenderMode.ScreenSpaceOverlay;
+            canvas.sortingOrder = 1000;
+
+            var scaler = canvas.GetComponent<CanvasScaler>();
+            scaler.uiScaleMode = CanvasScaler.ScaleMode.ScaleWithScreenSize;
+            scaler.referenceResolution = FixedGameReferenceResolution;
+            scaler.screenMatchMode = CanvasScaler.ScreenMatchMode.Expand;
+
+            resolutionSelectionCanvasRoot = canvas.transform as RectTransform;
+            var backdrop = AddFullScreenImage("Resolution Backdrop", null, resolutionSelectionCanvasRoot, new Color(0.035f, 0.025f, 0.055f, 1f));
+            backdrop.raycastTarget = true;
+
+            var panel = CreateRect(
+                "Resolution Panel",
+                resolutionSelectionCanvasRoot,
+                new Vector2(0.5f, 0.5f),
+                new Vector2(0.5f, 0.5f),
+                new Vector2(0.5f, 0.5f),
+                Vector2.zero,
+                new Vector2(820f, 820f));
+            var panelImage = panel.gameObject.AddComponent<Image>();
+            panelImage.color = new Color(0.12f, 0.075f, 0.18f, 0.98f);
+            panelImage.raycastTarget = true;
+
+            var title = CreateText("Title", panel, new Vector2(0.5f, 1f), new Vector2(0.5f, 1f), "화면 해상도 선택", 52, FontStyle.Bold);
+            ConfigureResolutionText(title, new Vector2(720f, 76f), new Vector2(0f, -48f), new Vector2(0.5f, 1f), 34f, 52f);
+            title.color = Color.white;
+
+            var subtitle = CreateText("Subtitle", panel, new Vector2(0.5f, 1f), new Vector2(0.5f, 1f), "16:9 해상도 중 하나를 선택해 주세요", 30, FontStyle.Normal);
+            ConfigureResolutionText(subtitle, new Vector2(720f, 48f), new Vector2(0f, -132f), new Vector2(0.5f, 1f), 22f, 30f);
+            subtitle.color = new Color(0.82f, 0.77f, 0.9f, 1f);
+
+            var optionsRoot = CreateRect(
+                "Resolution Options",
+                panel,
+                new Vector2(0.5f, 1f),
+                new Vector2(0.5f, 1f),
+                new Vector2(0.5f, 1f),
+                new Vector2(0f, -206f),
+                new Vector2(700f, 430f));
+            var layout = optionsRoot.gameObject.AddComponent<VerticalLayoutGroup>();
+            layout.spacing = 14f;
+            layout.childAlignment = TextAnchor.MiddleCenter;
+            layout.childControlWidth = true;
+            layout.childControlHeight = true;
+            layout.childForceExpandWidth = true;
+            layout.childForceExpandHeight = true;
+
+            foreach (var resolution in CommonResolutionOptions)
+            {
+                BuildResolutionOptionButton(optionsRoot, resolution);
+            }
+
+            resolutionStatusText = CreateText("Status", panel, new Vector2(0.5f, 0f), new Vector2(0.5f, 0f), "지원되는 해상도를 선택해 주세요", 30, FontStyle.Bold);
+            ConfigureResolutionText(resolutionStatusText, new Vector2(720f, 70f), new Vector2(0f, 44f), new Vector2(0.5f, 0f), 22f, 30f);
+            resolutionStatusText.color = new Color(1f, 0.82f, 0.34f, 1f);
+        }
+
+        static void ConfigureResolutionText(TextMeshProUGUI text, Vector2 size, Vector2 position, Vector2 pivot, float minFontSize, float maxFontSize)
+        {
+            if (text == null)
+            {
+                return;
+            }
+
+            var rect = text.rectTransform;
+            rect.pivot = pivot;
+            rect.anchoredPosition = position;
+            rect.sizeDelta = size;
+            text.enableAutoSizing = true;
+            text.fontSizeMin = minFontSize;
+            text.fontSizeMax = maxFontSize;
+            text.overflowMode = TextOverflowModes.Ellipsis;
+        }
+
+        void BuildResolutionOptionButton(RectTransform parent, Vector2Int resolution)
+        {
+            var rect = CreateRect(
+                resolution.x + " x " + resolution.y,
+                parent,
+                new Vector2(0.5f, 0.5f),
+                new Vector2(0.5f, 0.5f),
+                new Vector2(0.5f, 0.5f),
+                Vector2.zero,
+                new Vector2(700f, 72f));
+            var element = rect.gameObject.AddComponent<LayoutElement>();
+            element.minHeight = 66f;
+            element.preferredHeight = 72f;
+            element.flexibleHeight = 1f;
+
+            var supported = IsResolutionSupported(resolution);
+            var image = rect.gameObject.AddComponent<Image>();
+            image.color = supported
+                ? new Color(0.38f, 0.19f, 0.58f, 1f)
+                : new Color(0.25f, 0.23f, 0.28f, 1f);
+
+            var button = rect.gameObject.AddComponent<Button>();
+            button.targetGraphic = image;
+            var colors = button.colors;
+            colors.highlightedColor = supported ? new Color(0.56f, 0.3f, 0.78f, 1f) : new Color(0.34f, 0.31f, 0.38f, 1f);
+            colors.pressedColor = new Color(0.23f, 0.12f, 0.34f, 1f);
+            button.colors = colors;
+            button.onClick.AddListener(() => TrySelectResolution(resolution));
+
+            var label = CreateText("Label", rect, Vector2.zero, Vector2.one, resolution.x + " x " + resolution.y, 34, FontStyle.Bold);
+            label.color = supported ? Color.white : new Color(0.72f, 0.68f, 0.75f, 1f);
+            label.enableAutoSizing = true;
+            label.fontSizeMin = 22f;
+            label.fontSizeMax = 34f;
+            label.overflowMode = TextOverflowModes.Ellipsis;
+        }
+
+        static bool IsResolutionSupported(Vector2Int resolution)
+        {
+            var availableResolutions = Screen.resolutions;
+            for (var i = 0; i < availableResolutions.Length; i++)
+            {
+                if (availableResolutions[i].width == resolution.x && availableResolutions[i].height == resolution.y)
+                {
+                    return true;
+                }
+            }
+
+            if (availableResolutions.Length > 0 || Display.main == null)
+            {
+                return false;
+            }
+
+            return resolution.x <= Display.main.systemWidth && resolution.y <= Display.main.systemHeight;
+        }
+
+        void TrySelectResolution(Vector2Int resolution)
+        {
+            if (resolutionSelectionLocked)
+            {
+                return;
+            }
+
+            if (!IsResolutionSupported(resolution))
+            {
+                if (resolutionStatusText != null)
+                {
+                    resolutionStatusText.text = "모니터가 지원하지 않습니다";
+                    resolutionStatusText.color = new Color(1f, 0.36f, 0.36f, 1f);
+                }
+                return;
+            }
+
+            resolutionSelectionLocked = true;
+            if (resolutionStatusText != null)
+            {
+                resolutionStatusText.text = resolution.x + " x " + resolution.y + " 적용 중...";
+                resolutionStatusText.color = new Color(0.54f, 1f, 0.62f, 1f);
+            }
+
+            Screen.SetResolution(resolution.x, resolution.y, Screen.fullScreenMode);
+            StartCoroutine(ContinueAfterResolutionSelection());
+        }
+
+        IEnumerator ContinueAfterResolutionSelection()
+        {
+            yield return null;
+            lastScreenWidth = 0;
+            lastScreenHeight = 0;
+            ApplyFixedGameAspectRatio();
+            if (resolutionSelectionCanvasRoot != null)
+            {
+                resolutionSelectionCanvasRoot.gameObject.SetActive(false);
+            }
+            BeginOpeningSequence();
+        }
+
+        void ShowResolutionSelection()
+        {
+            EnsureResolutionSelectionCanvas();
+            resolutionSelectionLocked = false;
+            gameStarted = false;
+            StopBgm();
+
+            if (resolutionStatusText != null)
+            {
+                resolutionStatusText.text = "지원되는 해상도를 선택해 주세요";
+                resolutionStatusText.color = new Color(1f, 0.82f, 0.34f, 1f);
+            }
+
+            if (canvasRoot != null)
+            {
+                canvasRoot.gameObject.SetActive(false);
+            }
+            if (skillTreeCanvasRoot != null)
+            {
+                skillTreeCanvasRoot.gameObject.SetActive(false);
+            }
+            if (startScreenCanvasRoot != null)
+            {
+                startScreenCanvasRoot.gameObject.SetActive(false);
+            }
+            if (openingSequenceCanvasRoot != null)
+            {
+                openingSequenceCanvasRoot.gameObject.SetActive(false);
+            }
+            if (gameOverCanvasRoot != null)
+            {
+                gameOverCanvasRoot.gameObject.SetActive(false);
+            }
+            if (endingVideoCanvasRoot != null)
+            {
+                endingVideoCanvasRoot.gameObject.SetActive(false);
+            }
+            if (resolutionSelectionCanvasRoot != null)
+            {
+                resolutionSelectionCanvasRoot.gameObject.SetActive(true);
             }
         }
 
@@ -1628,6 +1889,7 @@ namespace GameKamiStreaming
 
         void ResetSkillUpgradesForNewRun()
         {
+            ResetSkillTreeView();
             skillUpgradeCounts.Clear();
             miningSpeedMultiplier = 1f;
             miningRangeMultiplier = 1f;
@@ -1652,6 +1914,22 @@ namespace GameKamiStreaming
             if (skillTreeTooltipRoot != null)
             {
                 skillTreeTooltipRoot.gameObject.SetActive(false);
+            }
+        }
+
+        void ResetSkillTreeView()
+        {
+            skillTreeZoom = InitialSkillTreeZoom;
+            skillTreeDragging = false;
+            previousSkillTreePointerPosition = Vector2.zero;
+            skillTreeTooltipTarget = null;
+            skillTreeTooltipPointerPosition = Vector2.zero;
+
+            if (skillTreeContentRoot != null)
+            {
+                skillTreeContentRoot.anchoredPosition = Vector2.zero;
+                skillTreeContentRoot.localScale = Vector3.one * skillTreeZoom;
+                ClampSkillTreeContentPosition();
             }
         }
 
@@ -1870,6 +2148,7 @@ namespace GameKamiStreaming
 
             var button = rect.gameObject.AddComponent<Button>();
             button.targetGraphic = image;
+            button.onClick.AddListener(GrantAllTestResources);
 
             var trigger = rect.gameObject.AddComponent<EventTrigger>();
             AddPointerEvent(trigger, EventTriggerType.PointerEnter, ShowSkillTreeTooltip);
@@ -3027,6 +3306,8 @@ namespace GameKamiStreaming
                 button = rect.gameObject.AddComponent<Button>();
             }
             button.targetGraphic = image;
+            button.onClick.RemoveListener(GrantAllTestResources);
+            button.onClick.AddListener(GrantAllTestResources);
 
             var trigger = rect.GetComponent<EventTrigger>();
             if (trigger == null)
@@ -3140,6 +3421,7 @@ namespace GameKamiStreaming
             }
 
             skillTreeRowsByKey.Clear();
+            InitializeSkillTreeButtonLayout();
             foreach (var row in database.SkillTree)
             {
                 if (row == null || string.IsNullOrWhiteSpace(row.skillStringKey))
@@ -3152,6 +3434,8 @@ namespace GameKamiStreaming
                 {
                     continue;
                 }
+
+                CenterSkillTreeButton(rect, row.skillStringKey);
 
                 var image = rect.GetComponent<Image>();
                 if (image != null)
@@ -3184,10 +3468,68 @@ namespace GameKamiStreaming
 
                 trigger.triggers.Clear();
                 var capturedRow = row;
-                AddPointerEvent(trigger, EventTriggerType.PointerEnter, _ => ShowSkillTreeTooltip(capturedRow));
+                var capturedRect = rect;
+                AddPointerEvent(trigger, EventTriggerType.PointerEnter, eventData => ShowSkillTreeTooltip(capturedRow, capturedRect, GetPointerScreenPosition(eventData)));
                 AddPointerEvent(trigger, EventTriggerType.PointerExit, HideSkillTreeTooltip);
                 skillTreeRowsByKey[row.skillStringKey] = row;
             }
+        }
+
+        void InitializeSkillTreeButtonLayout()
+        {
+            if (skillTreeButtonLayoutInitialized || skillTreeContentRoot == null || database == null)
+            {
+                return;
+            }
+
+            var maximumOuterExtent = 0f;
+            var foundButton = false;
+            foreach (var row in database.SkillTree)
+            {
+                if (row == null || string.IsNullOrWhiteSpace(row.skillStringKey))
+                {
+                    continue;
+                }
+
+                var rect = FindChildRect(skillTreeContentRoot, row.skillStringKey);
+                if (rect == null)
+                {
+                    continue;
+                }
+
+                var position = rect.anchoredPosition;
+                foundButton = true;
+                maximumOuterExtent = Mathf.Max(maximumOuterExtent, Mathf.Abs(position.x), Mathf.Abs(position.y));
+            }
+
+            if (!foundButton)
+            {
+                return;
+            }
+
+            // The original editable layout reaches 480 px from center. Once the
+            // requested 0.9 centering is saved to the scene it reaches 432 px, so
+            // editor menu runs and play-mode initialization must not scale it again.
+            skillTreeButtonAppliedCenteringFactor = maximumOuterExtent > SkillTreeButtonCenteringThreshold
+                ? SkillTreeButtonCenteringFactor
+                : 1f;
+            skillTreeButtonLayoutInitialized = true;
+        }
+
+        void CenterSkillTreeButton(RectTransform rect, string skillKey)
+        {
+            if (rect == null || string.IsNullOrWhiteSpace(skillKey))
+            {
+                return;
+            }
+
+            if (!skillTreeButtonInitialPositions.TryGetValue(skillKey, out var initialPosition))
+            {
+                initialPosition = rect.anchoredPosition;
+                skillTreeButtonInitialPositions[skillKey] = initialPosition;
+            }
+
+            rect.anchoredPosition = initialPosition * skillTreeButtonAppliedCenteringFactor;
         }
 
         bool IsSkillCompleted(SkillTreeRow row)
@@ -3354,18 +3696,136 @@ namespace GameKamiStreaming
 
         void ShowSkillTreeTooltip(BaseEventData eventData)
         {
-            ShowSkillTreeTooltip((SkillTreeRow)null);
+            ShowSkillTreeTooltip(null, FindSkillTreeTooltipTarget(eventData), GetPointerScreenPosition(eventData));
         }
 
         void ShowSkillTreeTooltip(SkillTreeRow row)
         {
+            var pointerPosition = skillTreeTooltipPointerPosition;
+            if (TryGetPointerPosition(out var currentPointerPosition))
+            {
+                pointerPosition = currentPointerPosition;
+            }
+
+            ShowSkillTreeTooltip(row, skillTreeTooltipTarget, pointerPosition);
+        }
+
+        void ShowSkillTreeTooltip(SkillTreeRow row, RectTransform hoveredButton, Vector2 pointerPosition)
+        {
+            skillTreeTooltipTarget = hoveredButton;
+            skillTreeTooltipPointerPosition = pointerPosition;
             EnsureSkillTreeTooltip();
             if (skillTreeTooltipRoot != null)
             {
                 SetSkillTreeTooltipContent(row);
                 skillTreeTooltipRoot.gameObject.SetActive(true);
                 skillTreeTooltipRoot.SetAsLastSibling();
+                PositionSkillTreeTooltip(hoveredButton, pointerPosition);
             }
+        }
+
+        RectTransform FindSkillTreeTooltipTarget(BaseEventData eventData)
+        {
+            var pointerEvent = eventData as PointerEventData;
+            var current = pointerEvent != null && pointerEvent.pointerEnter != null
+                ? pointerEvent.pointerEnter.transform
+                : null;
+            while (current != null && current != skillTreeCanvasRoot)
+            {
+                if (current.GetComponent<Button>() != null)
+                {
+                    return current as RectTransform;
+                }
+
+                current = current.parent;
+            }
+
+            return null;
+        }
+
+        static Vector2 GetPointerScreenPosition(BaseEventData eventData)
+        {
+            if (eventData is PointerEventData pointerEvent)
+            {
+                return pointerEvent.position;
+            }
+
+            return TryGetPointerPosition(out var pointerPosition) ? pointerPosition : Vector2.zero;
+        }
+
+        void PositionSkillTreeTooltip(RectTransform hoveredButton, Vector2 pointerPosition)
+        {
+            if (skillTreeTooltipRoot == null || skillTreeCanvasRoot == null)
+            {
+                return;
+            }
+
+            Canvas.ForceUpdateCanvases();
+            var pointerRect = new Rect(
+                pointerPosition - Vector2.one * SkillTreeTooltipPointerPadding,
+                Vector2.one * SkillTreeTooltipPointerPadding * 2f);
+            var hasHoveredButton = hoveredButton != null && hoveredButton.gameObject.activeInHierarchy;
+            var hoveredButtonRect = hasHoveredButton
+                ? ExpandScreenRect(GetScreenRect(hoveredButton, uiCamera), SkillTreeTooltipButtonPadding)
+                : default(Rect);
+            var bestCandidate = 0;
+            var bestDistance = float.MinValue;
+
+            for (var i = 0; i < SkillTreeTooltipAnchors.Length; i++)
+            {
+                ApplySkillTreeTooltipPlacement(i);
+                var tooltipRect = GetScreenRect(skillTreeTooltipRoot, uiCamera);
+                var overlapsPointer = tooltipRect.Overlaps(pointerRect);
+                var overlapsButton = hasHoveredButton && tooltipRect.Overlaps(hoveredButtonRect);
+                if (!overlapsPointer && !overlapsButton)
+                {
+                    return;
+                }
+
+                var distance = (tooltipRect.center - pointerPosition).sqrMagnitude;
+                if (hasHoveredButton)
+                {
+                    distance += (tooltipRect.center - hoveredButtonRect.center).sqrMagnitude;
+                }
+
+                if (distance > bestDistance)
+                {
+                    bestDistance = distance;
+                    bestCandidate = i;
+                }
+            }
+
+            ApplySkillTreeTooltipPlacement(bestCandidate);
+        }
+
+        void ApplySkillTreeTooltipPlacement(int candidateIndex)
+        {
+            var anchor = SkillTreeTooltipAnchors[candidateIndex];
+            skillTreeTooltipRoot.anchorMin = anchor;
+            skillTreeTooltipRoot.anchorMax = anchor;
+            skillTreeTooltipRoot.pivot = anchor;
+            skillTreeTooltipRoot.anchoredPosition = SkillTreeTooltipPositions[candidateIndex];
+        }
+
+        static Rect GetScreenRect(RectTransform rectTransform, Camera camera)
+        {
+            var corners = new Vector3[4];
+            rectTransform.GetWorldCorners(corners);
+            var min = RectTransformUtility.WorldToScreenPoint(camera, corners[0]);
+            var max = min;
+            for (var i = 1; i < corners.Length; i++)
+            {
+                var point = RectTransformUtility.WorldToScreenPoint(camera, corners[i]);
+                min = Vector2.Min(min, point);
+                max = Vector2.Max(max, point);
+            }
+
+            return Rect.MinMaxRect(min.x, min.y, max.x, max.y);
+        }
+
+        static Rect ExpandScreenRect(Rect rect, float padding)
+        {
+            return Rect.MinMaxRect(rect.xMin - padding, rect.yMin - padding, rect.xMax + padding, rect.yMax + padding);
         }
 
         void SetSkillTreeTooltipContent(SkillTreeRow row)
@@ -3771,12 +4231,22 @@ namespace GameKamiStreaming
                 return false;
             }
 
+            // Managers may be dispatched from the pointer even when it is outside
+            // the mining polygon. In that case they travel into the board instead
+            // of rejecting the wave because the old inside-only ray test returns 0.
+            if (!IsPointInsideConvexPolygon(startPosition, spawnPolygon))
+            {
+                destination = GetCentroid(spawnPolygon);
+                return (destination - startPosition).sqrMagnitude > 1f;
+            }
+
             GetPolygonBounds(spawnPolygon, out var min, out var max);
             var maximumDistance = Vector2.Distance(min, max) * 2f;
             var travelDistance = FindMaxInsideTravelDistance(startPosition, direction.normalized, maximumDistance, 0f, spawnPolygon);
             if (travelDistance <= 1f)
             {
-                return false;
+                destination = GetCentroid(spawnPolygon);
+                return (destination - startPosition).sqrMagnitude > 1f;
             }
 
             destination = startPosition + direction.normalized * travelDistance;
@@ -3785,11 +4255,10 @@ namespace GameKamiStreaming
 
         bool TryGetCurrentMiningPosition(out Vector2 position)
         {
+            EnsurePieceDisplayLayer();
             position = Vector2.zero;
-            return miningCursor != null &&
-                miningCursor.gameObject.activeInHierarchy &&
+            return pieceDisplayLayer != null &&
                 TryGetPointerPosition(out var pointerPosition) &&
-                IsPointerInsideMiningArea(pointerPosition) &&
                 RectTransformUtility.ScreenPointToLocalPointInRectangle(pieceDisplayLayer, pointerPosition, uiCamera, out position);
         }
 
@@ -3821,7 +4290,9 @@ namespace GameKamiStreaming
                 bossOneSpeed = bossOneDefinition.moveStepDistance / Mathf.Max(0.01f, bossOneDefinition.moveInterval);
             }
 
-            return bossOneSpeed * ManagerBossOneSpeedFactor * managerSpeedMultiplier;
+            // Speed upgrades control the manager dispatch interval only. Movement is
+            // deliberately fixed at four times the previous base movement speed.
+            return bossOneSpeed * ManagerBossOneSpeedFactor * ManagerBaseMoveSpeedMultiplier;
         }
 
         void UpdateManagerAnimation(ManagerAgent manager)
@@ -3906,6 +4377,7 @@ namespace GameKamiStreaming
 
         void HideSkillTreeTooltip(BaseEventData eventData)
         {
+            skillTreeTooltipTarget = null;
             if (skillTreeTooltipRoot != null)
             {
                 skillTreeTooltipRoot.gameObject.SetActive(false);
@@ -3931,6 +4403,20 @@ namespace GameKamiStreaming
         int GetResourceAmount(int resourceId)
         {
             return resourceManager != null ? resourceManager.GetAmount(resourceId) : 0;
+        }
+
+        void GrantAllTestResources()
+        {
+            // This method is intentionally referenced only by the disposable test button.
+            if (resourceManager == null || database == null)
+            {
+                return;
+            }
+
+            foreach (var resource in database.Resources)
+            {
+                resourceManager.Add(resource.resourceId, TestResourceGrantAmount);
+            }
         }
 
         void HandleResourceAmountChanged(int resourceId, int amount)
@@ -4155,6 +4641,12 @@ namespace GameKamiStreaming
                 ZoomSkillTree(Mathf.Clamp(normalizedScroll, -1f, 1f), pointerPosition);
             }
 
+            if (skillTreeTooltipRoot != null && skillTreeTooltipRoot.gameObject.activeSelf && TryGetPointerPosition(out pointerPosition))
+            {
+                skillTreeTooltipPointerPosition = pointerPosition;
+                PositionSkillTreeTooltip(skillTreeTooltipTarget, pointerPosition);
+            }
+
             if (!TryGetPointerPosition(out pointerPosition) || !TryGetLeftMouseButton())
             {
                 skillTreeDragging = false;
@@ -4193,12 +4685,19 @@ namespace GameKamiStreaming
 
             var previousZoom = skillTreeZoom;
             skillTreeZoom = Mathf.Clamp(skillTreeZoom + scrollStep * SkillTreeZoomStep, SkillTreeMinZoom, SkillTreeMaxZoom);
+            if (Mathf.Approximately(skillTreeZoom, InitialSkillTreeZoom))
+            {
+                skillTreeContentRoot.anchoredPosition = Vector2.zero;
+            }
+
             if (Mathf.Approximately(previousZoom, skillTreeZoom))
             {
+                ApplySkillTreeTransform();
                 return;
             }
 
-            if (RectTransformUtility.ScreenPointToLocalPointInRectangle(skillTreeCanvasRoot, pointerPosition, uiCamera, out var canvasPoint))
+            if (!Mathf.Approximately(skillTreeZoom, InitialSkillTreeZoom) &&
+                RectTransformUtility.ScreenPointToLocalPointInRectangle(skillTreeCanvasRoot, pointerPosition, uiCamera, out var canvasPoint))
             {
                 var contentPointAtPointer = (canvasPoint - skillTreeContentRoot.anchoredPosition) / previousZoom;
                 skillTreeContentRoot.anchoredPosition = canvasPoint - contentPointAtPointer * skillTreeZoom;
@@ -5364,8 +5863,7 @@ namespace GameKamiStreaming
                 return;
             }
 
-            var insideStage = IsPointerInsideMiningArea(pointerPosition);
-            miningCursor.gameObject.SetActive(insideStage);
+            miningCursor.gameObject.SetActive(true);
             miningCursor.anchoredPosition = canvasPoint;
             BringMiningVisualsToFront();
         }
@@ -5383,31 +5881,9 @@ namespace GameKamiStreaming
             }
         }
 
-        bool IsPointerInsideMiningArea(Vector2 pointerPosition)
-        {
-            EnsurePieceDisplayLayer();
-            if (TryGetSpawnPolygon(out var polygon) &&
-                RectTransformUtility.ScreenPointToLocalPointInRectangle(pieceDisplayLayer, pointerPosition, uiCamera, out var displayPoint))
-            {
-                return IsPointInsideConvexPolygon(displayPoint, polygon);
-            }
-
-            return pieceLayer != null && RectTransformUtility.RectangleContainsScreenPoint(pieceLayer, pointerPosition, uiCamera);
-        }
-
         void UpdateMiningAttack()
         {
-            if (miningAttackPlaying || skillTreeOpen)
-            {
-                return;
-            }
-
-            if (!TryGetPointerPosition(out var pointerPosition) || miningCursor == null || !miningCursor.gameObject.activeSelf)
-            {
-                return;
-            }
-
-            if (!IsPointerInsideMiningArea(pointerPosition))
+            if (miningAttackPlaying || skillTreeOpen || miningCursor == null || !miningCursor.gameObject.activeSelf)
             {
                 return;
             }
@@ -5482,7 +5958,7 @@ namespace GameKamiStreaming
 
         void ApplyMiningDamageAtPointer()
         {
-            if (skillTreeOpen || !TryGetPointerPosition(out var pointerPosition) || !IsPointerInsideMiningArea(pointerPosition))
+            if (skillTreeOpen || !TryGetPointerPosition(out var pointerPosition))
             {
                 return;
             }

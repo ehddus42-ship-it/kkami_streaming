@@ -487,7 +487,9 @@ namespace GameKamiStreaming
             }
 
             defeated = true;
-            ResetDisplayTransform();
+            // Boss 4 uses a larger display transform for its movement/emerge animation.
+            // Keep that same visual size for the death animation instead of shrinking.
+            SetDisplayTransform(emergeDisplayScale, emergeDisplayOffsetY);
             if (image != null)
             {
                 var color = image.color;
