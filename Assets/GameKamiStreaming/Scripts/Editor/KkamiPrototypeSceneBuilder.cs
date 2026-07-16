@@ -1,4 +1,4 @@
-﻿using GameKamiStreaming;
+using GameKamiStreaming;
 using UnityEditor;
 using UnityEditor.Events;
 using UnityEditor.SceneManagement;
@@ -21,6 +21,8 @@ namespace GameKamiStreamingEditor
             var bootstrap = new GameObject("KkamiPrototypeGame");
             var game = bootstrap.AddComponent<KkamiPrototypeGame>();
             game.BuildEditableSceneLayout();
+            EnsurePersistentStartGameButton(game);
+            EnsurePersistentExitGameButton(game);
 
             EditorSceneManager.SaveScene(scene, ScenePath);
             AddSceneToBuildSettings(ScenePath);
@@ -112,6 +114,7 @@ namespace GameKamiStreamingEditor
 
             game.EnsureEditableStartScreen();
             EnsurePersistentStartGameButton(game);
+            EnsurePersistentExitGameButton(game);
             EditorUtility.SetDirty(game);
             EditorSceneManager.MarkSceneDirty(scene);
             EditorSceneManager.SaveScene(scene);
@@ -183,6 +186,30 @@ namespace GameKamiStreamingEditor
                 }
 
                 UnityEventTools.AddPersistentListener(button.onClick, game.StartGameFromStartScreen);
+                EditorUtility.SetDirty(button);
+                return;
+            }
+        }
+
+        static void EnsurePersistentExitGameButton(KkamiPrototypeGame game)
+        {
+            var buttons = Object.FindObjectsByType<Button>(FindObjectsInactive.Include, FindObjectsSortMode.None);
+            foreach (var button in buttons)
+            {
+                if (button.name != "Exit Game Button")
+                {
+                    continue;
+                }
+
+                for (var i = 0; i < button.onClick.GetPersistentEventCount(); i++)
+                {
+                    if (button.onClick.GetPersistentTarget(i) == game && button.onClick.GetPersistentMethodName(i) == nameof(KkamiPrototypeGame.QuitGameFromStartScreen))
+                    {
+                        return;
+                    }
+                }
+
+                UnityEventTools.AddPersistentListener(button.onClick, game.QuitGameFromStartScreen);
                 EditorUtility.SetDirty(button);
                 return;
             }
