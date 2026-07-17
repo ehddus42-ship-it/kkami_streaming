@@ -4048,7 +4048,7 @@ MonoBehaviour:
     m_PersistentCalls:
       m_Calls:
       - m_Target: {fileID: 1719197690}
-        m_TargetAssemblyTypeName: GameKamiStreaming.KkamiPrototypeGame, Assembly-CSharp
+        m_TargetAssemblyTypeName: GameKamiStreaming.KkamiMaster, GameKamiStreaming.Runtime
         m_MethodName: StartGameFromStartScreen
         m_Mode: 0
         m_Arguments:
@@ -7496,7 +7496,7 @@ MonoBehaviour:
     m_PersistentCalls:
       m_Calls:
       - m_Target: {fileID: 1719197690}
-        m_TargetAssemblyTypeName: GameKamiStreaming.KkamiPrototypeGame, Assembly-CSharp
+        m_TargetAssemblyTypeName: GameKamiStreaming.KkamiMaster, GameKamiStreaming.Runtime
         m_MethodName: StartNextStageFromSkillTree
         m_Mode: 0
         m_Arguments:
@@ -9698,7 +9698,7 @@ GameObject:
   - component: {fileID: 1719197691}
   - component: {fileID: 1719197690}
   m_Layer: 0
-  m_Name: KkamiPrototypeGame
+  m_Name: KkamiMaster
   m_TagString: Untagged
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
@@ -9715,7 +9715,7 @@ MonoBehaviour:
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: f260ff49213853c469dd7d8f2d451a19, type: 3}
   m_Name: 
-  m_EditorClassIdentifier: Assembly-CSharp::GameKamiStreaming.KkamiPrototypeGame
+  m_EditorClassIdentifier: GameKamiStreaming.Runtime::GameKamiStreaming.KkamiMaster
   uiCamera: {fileID: 684634374}
   canvasRoot: {fileID: 899061147}
   stageArea: {fileID: 608261898}
@@ -11196,7 +11196,7 @@ MonoBehaviour:
     m_PersistentCalls:
       m_Calls:
       - m_Target: {fileID: 1719197690}
-        m_TargetAssemblyTypeName: GameKamiStreaming.KkamiPrototypeGame, Assembly-CSharp
+        m_TargetAssemblyTypeName: GameKamiStreaming.KkamiMaster, GameKamiStreaming.Runtime
         m_MethodName: QuitGameFromStartScreen
         m_Mode: 0
         m_Arguments:

@@ -10,4 +10,4 @@
 
 ## 관련 파일
 
-- `Assets/GameKamiStreaming/Scripts/Runtime/KkamiPrototypeGame.cs`
+- `Assets/GameKamiStreaming/Scripts/Runtime/KkamiMaster.cs`

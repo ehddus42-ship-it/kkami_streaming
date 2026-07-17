@@ -24,7 +24,7 @@ namespace GameKamiStreaming.Tests
                 var legacyText = gameObject.GetComponent<Text>();
                 legacyText.text = "스킬 설명";
 
-                var method = typeof(KkamiPrototypeGame).GetMethod(
+                var method = typeof(KkamiMaster).GetMethod(
                     "EnsureSkillTreeTooltipText",
                     BindingFlags.Static | BindingFlags.NonPublic);
 

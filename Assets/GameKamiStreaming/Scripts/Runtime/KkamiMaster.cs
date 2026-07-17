@@ -13,7 +13,7 @@ using UnityEngine.UI;
 
 namespace GameKamiStreaming
 {
-    public sealed class KkamiPrototypeGame : MonoBehaviour, IBossMovementArea
+    public sealed class KkamiMaster : MonoBehaviour, IBossMovementArea
     {
         const string SpriteRoot = "GameKamiStreaming/Sprites/";
         const string KaturiSdfFontPath = SpriteRoot + "font/Katuri SDF";
@@ -523,10 +523,10 @@ namespace GameKamiStreaming
 
         sealed class SkillTreePointerRelay : MonoBehaviour, IPointerEnterHandler, IPointerExitHandler, IPointerClickHandler
         {
-            KkamiPrototypeGame owner;
+            KkamiMaster owner;
             SkillTreeRow row;
 
-            public void Configure(KkamiPrototypeGame owner, SkillTreeRow row)
+            public void Configure(KkamiMaster owner, SkillTreeRow row)
             {
                 this.owner = owner;
                 this.row = row;
@@ -560,9 +560,9 @@ namespace GameKamiStreaming
 
         sealed class ButtonClickSoundRelay : MonoBehaviour, IPointerClickHandler
         {
-            KkamiPrototypeGame owner;
+            KkamiMaster owner;
 
-            public void Configure(KkamiPrototypeGame owner)
+            public void Configure(KkamiMaster owner)
             {
                 this.owner = owner;
             }
@@ -578,9 +578,9 @@ namespace GameKamiStreaming
 
         sealed class SoundVolumeSliderRelay : MonoBehaviour, IPointerUpHandler, IEndDragHandler
         {
-            KkamiPrototypeGame owner;
+            KkamiMaster owner;
 
-            public void Configure(KkamiPrototypeGame owner)
+            public void Configure(KkamiMaster owner)
             {
                 this.owner = owner;
             }

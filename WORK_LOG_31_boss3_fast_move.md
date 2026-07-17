@@ -8,7 +8,7 @@
 
 ## 변경 파일
 
-- `Assets/GameKamiStreaming/Scripts/Runtime/KkamiPrototypeGame.cs`
+- `Assets/GameKamiStreaming/Scripts/Runtime/KkamiMaster.cs`
 - `Assets/GameKamiStreaming/Resources/GameKamiStreaming/DataTables/piece.csv`
 - `Assets/GameKamiStreaming/Resources/GameKamiStreaming/DataTables/xlsx_export/res_vfx.csv`
 - `Assets/GameKamiStreaming/Resources/GameKamiStreaming/Sprites/vfx_boss3_01.png`
