@@ -9,11 +9,7 @@ namespace Kkami.DataTools;
 
 internal static class Program
 {
-    static readonly string[] DataSheets =
-    {
-        "miner", "piece", "currency", "boss", "stage", "skilltree", "stringkey", "chat",
-        "res_img", "res_sfx", "res_vfx"
-    };
+    const string DefaultSourceFileName = "kkami_datatable_ver03.xlsx";
 
     static readonly Dictionary<string, string[]> ImageMappings = new(StringComparer.Ordinal)
     {
@@ -62,9 +58,9 @@ internal static class Program
                     throw new InvalidOperationException("Unity 프로젝트 루트를 찾지 못했습니다.");
                 return Export(new[]
                 {
-                    Path.Combine(projectRoot, "SourceData", "kkami_datatable_ver02.xlsx"),
+                    Path.Combine(projectRoot, "SourceData", DefaultSourceFileName),
                     "--project-root", projectRoot,
-                    "--output", Path.Combine(projectRoot, "Assets", "GameKamiStreaming", "Resources", "GameKamiStreaming", "DataTables", "xlsx_export")
+                    "--output", Path.Combine(projectRoot, "Assets", "GameKamiStreaming", "DataTables", "XlsxExport")
                 });
             }
 
@@ -87,9 +83,9 @@ internal static class Program
     static int PrintHelp()
     {
         Console.WriteLine("까미 스트리밍 데이터 도구");
-        Console.WriteLine("  Kkami.DataTools export <xlsx> [--project-root <path>] [--output <path>]");
+        Console.WriteLine("  Kkami.DataTools export <xlsx> [--project-root <path>] [--output <path>] [--runtime-output <path>]");
         Console.WriteLine("  Kkami.DataTools sync-images [--project-root <path>] [--external-source <path>]");
-        Console.WriteLine("  Kkami.DataTools <xlsx> [--project-root <path>] [--output <path>]");
+        Console.WriteLine("  Kkami.DataTools <xlsx> [--project-root <path>] [--output <path>] [--runtime-output <path>]");
         return 0;
     }
 
@@ -101,15 +97,17 @@ internal static class Program
         var xlsx = Path.GetFullPath(args[0]);
         var projectRoot = ReadOption(args, "--project-root");
         var output = ReadOption(args, "--output") ?? Path.Combine(Path.GetDirectoryName(xlsx)!, "csv_export");
+        var runtimeOutput = ReadOption(args, "--runtime-output");
         if (!File.Exists(xlsx))
             throw new FileNotFoundException("XLSX 파일을 찾을 수 없습니다.", xlsx);
 
         using var reader = new XlsxReader(xlsx);
         ExportRaw(reader, Path.GetFullPath(output));
         var warnings = new List<string>();
-        if (projectRoot is not null)
+        if (projectRoot is not null || runtimeOutput is not null)
         {
-            var runtimeOutput = Path.Combine(Path.GetFullPath(projectRoot), "Assets", "GameKamiStreaming", "Resources", "GameKamiStreaming", "DataTables");
+            runtimeOutput ??= Path.Combine(Path.GetFullPath(projectRoot!), "Assets", "GameKamiStreaming", "Resources", "GameKamiStreaming", "DataTables");
+            runtimeOutput = Path.GetFullPath(runtimeOutput);
             warnings.AddRange(ExportRuntime(reader, runtimeOutput));
             Console.WriteLine($"게임 CSV 갱신: {runtimeOutput}");
         }
@@ -205,9 +203,6 @@ internal static class Program
         WriteCsv(Path.Combine(output, "res_vfx.csv"), new[] { "effect_id", "effect_name", "prefab_path" },
             allVfxNames.Order(StringComparer.Ordinal).Select(name => new object?[] { name, name, "" }).ToList());
 
-        var rawOutput = Path.Combine(output, "xlsx_export");
-        foreach (var sheet in DataSheets)
-            WriteCsvRows(Path.Combine(rawOutput, sheet + ".csv"), reader.Rows(sheet));
         return warnings;
     }
 
@@ -324,10 +319,22 @@ internal static class Program
 
     static void WriteCsv(string path, IEnumerable<string> headers, IEnumerable<object?[]> rows)
     {
+        var headerList = headers.ToArray();
+        var rowList = rows.ToList();
+        for (var rowIndex = 0; rowIndex < rowList.Count; rowIndex++)
+        {
+            if (rowList[rowIndex].Length != headerList.Length)
+            {
+                throw new InvalidDataException(
+                    $"CSV 열 수 불일치: {Path.GetFileName(path)} {rowIndex + 2}행 " +
+                    $"(헤더 {headerList.Length}개, 데이터 {rowList[rowIndex].Length}개)");
+            }
+        }
+
         Directory.CreateDirectory(Path.GetDirectoryName(path)!);
         using var writer = new StreamWriter(path, false, new UTF8Encoding(true));
-        writer.WriteLine(string.Join(",", headers.Select(EscapeCsv)));
-        foreach (var row in rows)
+        writer.WriteLine(string.Join(",", headerList.Select(EscapeCsv)));
+        foreach (var row in rowList)
             writer.WriteLine(string.Join(",", row.Select(value => EscapeCsv(Convert.ToString(value, CultureInfo.InvariantCulture) ?? ""))));
     }
 

@@ -1,0 +1,8 @@
+{
+  "name": "GameKamiStreaming.Runtime",
+  "rootNamespace": "GameKamiStreaming",
+  "references": [
+    "Unity.InputSystem",
+    "Unity.TextMeshPro"
+  ]
+}

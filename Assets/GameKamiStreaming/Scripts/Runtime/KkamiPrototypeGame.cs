@@ -57,6 +57,7 @@ namespace GameKamiStreaming
         const int SkillTreeTooltipCostColumns = 2;
         const int SkillTreeTooltipCostRows = 3;
         const int SkillTreeTooltipCostEntryCount = 6;
+        const int SkillTreeTooltipBaseCostEntryCount = 4;
         const float SkillTreeTooltipCostIconSize = 30f;
         const float StageImageSaturation = 0.82f;
         const float StageImageBrightness = 0.98f;
@@ -65,7 +66,6 @@ namespace GameKamiStreaming
         const string SkillTreeTestButtonSpriteId = "skilltree_button_test";
         const string SkillTreeUsedButtonSpriteId = "skilltree_button_used";
         const string SkillTreeAvailableButtonSpriteId = "skilltree_button_available";
-        const string ManagerActivationSkillKey = "SD10116";
         const string NextStageButtonSpriteId = "next_stage_button";
         const string StartScreenBackgroundSpriteId = "start_screen";
         const string StartGameButtonSpriteId = "start_button";
@@ -373,6 +373,10 @@ namespace GameKamiStreaming
         [SerializeField] Vector2 soundVolumeControlOffset = new Vector2(-24f, -24f);
         [SerializeField] Vector2 soundVolumeControlSize = new Vector2(180f, 180f);
         [SerializeField] Image soundVolumeControlImage;
+        [SerializeField] RectTransform soundVolumeSliderPanelRoot;
+        [SerializeField] Vector2 soundVolumeSliderPanelSize = new Vector2(430f, 150f);
+        [SerializeField] Slider soundVolumeSlider;
+        [SerializeField] TextMeshProUGUI soundVolumeValueText;
         [SerializeField] RectTransform exitGameButtonRoot;
         [SerializeField] Vector2 exitGameButtonOffset = new Vector2(-56f, 400f);
         [SerializeField] Vector2 exitGameButtonSize = new Vector2(480f, 320f);
@@ -572,7 +576,7 @@ namespace GameKamiStreaming
             }
         }
 
-        sealed class SoundVolumeDragRelay : MonoBehaviour, IDragHandler, IEndDragHandler
+        sealed class SoundVolumeSliderRelay : MonoBehaviour, IPointerUpHandler, IEndDragHandler
         {
             KkamiPrototypeGame owner;
 
@@ -581,15 +585,15 @@ namespace GameKamiStreaming
                 this.owner = owner;
             }
 
-            public void OnDrag(PointerEventData eventData)
+            public void OnEndDrag(PointerEventData eventData)
             {
                 if (owner != null)
                 {
-                    owner.SetMasterVolumeFromPointer(transform as RectTransform, eventData);
+                    owner.SaveMasterVolume();
                 }
             }
 
-            public void OnEndDrag(PointerEventData eventData)
+            public void OnPointerUp(PointerEventData eventData)
             {
                 if (owner != null)
                 {
@@ -1435,18 +1439,231 @@ namespace GameKamiStreaming
             }
 
             volumeButton.targetGraphic = soundVolumeControlImage;
+            volumeButton.onClick.RemoveListener(ToggleSoundVolumeSlider);
+            volumeButton.onClick.AddListener(ToggleSoundVolumeSlider);
             var controlPosition = soundVolumeControlRoot.anchoredPosition3D;
             controlPosition.z = 0f;
             soundVolumeControlRoot.anchoredPosition3D = controlPosition;
             soundVolumeControlRoot.SetAsLastSibling();
 
-            var dragRelay = soundVolumeControlRoot.GetComponent<SoundVolumeDragRelay>();
-            if (dragRelay == null)
+            EnsureSoundVolumeSlider();
+        }
+
+        void EnsureSoundVolumeSlider()
+        {
+            if (soundVolumeSliderPanelRoot == null && startScreenCanvasRoot != null)
             {
-                dragRelay = soundVolumeControlRoot.gameObject.AddComponent<SoundVolumeDragRelay>();
+                soundVolumeSliderPanelRoot = FindChildRect(startScreenCanvasRoot, "Sound Volume Slider Panel");
             }
 
-            dragRelay.Configure(this);
+            if (soundVolumeSliderPanelRoot == null && startScreenCanvasRoot != null)
+            {
+                soundVolumeSliderPanelRoot = CreateRect(
+                    "Sound Volume Slider Panel",
+                    startScreenCanvasRoot,
+                    Vector2.one,
+                    Vector2.one,
+                    Vector2.one,
+                    Vector2.zero,
+                    soundVolumeSliderPanelSize);
+            }
+
+            if (soundVolumeSliderPanelRoot == null)
+            {
+                return;
+            }
+
+            soundVolumeSliderPanelRoot.anchorMin = Vector2.one;
+            soundVolumeSliderPanelRoot.anchorMax = Vector2.one;
+            soundVolumeSliderPanelRoot.pivot = Vector2.one;
+            soundVolumeSliderPanelRoot.sizeDelta = soundVolumeSliderPanelSize;
+            if (soundVolumeControlRoot != null)
+            {
+                soundVolumeSliderPanelRoot.anchoredPosition = new Vector2(
+                    soundVolumeControlRoot.anchoredPosition.x,
+                    soundVolumeControlRoot.anchoredPosition.y - soundVolumeControlRoot.rect.height - 16f);
+            }
+
+            var panelImage = soundVolumeSliderPanelRoot.GetComponent<Image>();
+            if (panelImage == null)
+            {
+                panelImage = soundVolumeSliderPanelRoot.gameObject.AddComponent<Image>();
+            }
+            panelImage.color = new Color(1f, 0.78f, 0.9f, 0.97f);
+            panelImage.raycastTarget = true;
+
+            var panelOutline = soundVolumeSliderPanelRoot.GetComponent<Outline>();
+            if (panelOutline == null)
+            {
+                panelOutline = soundVolumeSliderPanelRoot.gameObject.AddComponent<Outline>();
+            }
+            panelOutline.effectColor = new Color(0.73f, 0.08f, 0.39f, 0.9f);
+            panelOutline.effectDistance = new Vector2(4f, -4f);
+
+            var valueTextRoot = FindChildRect(soundVolumeSliderPanelRoot, "Volume Value");
+            if (valueTextRoot == null)
+            {
+                valueTextRoot = CreateRect(
+                    "Volume Value",
+                    soundVolumeSliderPanelRoot,
+                    new Vector2(0f, 1f),
+                    Vector2.one,
+                    new Vector2(0.5f, 1f),
+                    new Vector2(0f, -12f),
+                    new Vector2(-36f, 54f));
+            }
+
+            soundVolumeValueText = valueTextRoot.GetComponent<TextMeshProUGUI>();
+            if (soundVolumeValueText == null)
+            {
+                soundVolumeValueText = valueTextRoot.gameObject.AddComponent<TextMeshProUGUI>();
+            }
+            soundVolumeValueText.font = LoadKaturiSdfFont();
+            soundVolumeValueText.fontSize = 30f;
+            soundVolumeValueText.fontStyle = FontStyles.Bold;
+            soundVolumeValueText.alignment = TextAlignmentOptions.Center;
+            soundVolumeValueText.color = new Color(0.46f, 0.04f, 0.24f, 1f);
+            soundVolumeValueText.raycastTarget = false;
+
+            var sliderRoot = FindChildRect(soundVolumeSliderPanelRoot, "Volume Slider");
+            if (sliderRoot == null)
+            {
+                sliderRoot = CreateRect(
+                    "Volume Slider",
+                    soundVolumeSliderPanelRoot,
+                    new Vector2(0f, 0f),
+                    new Vector2(1f, 0f),
+                    new Vector2(0.5f, 0f),
+                    new Vector2(0f, 22f),
+                    new Vector2(-52f, 58f));
+            }
+
+            soundVolumeSlider = sliderRoot.GetComponent<Slider>();
+            if (soundVolumeSlider == null)
+            {
+                soundVolumeSlider = sliderRoot.gameObject.AddComponent<Slider>();
+            }
+            var sliderHitImage = sliderRoot.GetComponent<Image>();
+            if (sliderHitImage == null)
+            {
+                sliderHitImage = sliderRoot.gameObject.AddComponent<Image>();
+            }
+            sliderHitImage.color = Color.clear;
+            sliderHitImage.raycastTarget = true;
+
+            var backgroundRoot = FindChildRect(sliderRoot, "Background");
+            if (backgroundRoot == null)
+            {
+                backgroundRoot = CreateRect("Background", sliderRoot, new Vector2(0f, 0.5f), new Vector2(1f, 0.5f), new Vector2(0.5f, 0.5f), Vector2.zero, new Vector2(0f, 16f));
+            }
+            var backgroundImage = backgroundRoot.GetComponent<Image>();
+            if (backgroundImage == null)
+            {
+                backgroundImage = backgroundRoot.gameObject.AddComponent<Image>();
+            }
+            backgroundImage.color = new Color(0.48f, 0.08f, 0.28f, 0.82f);
+            backgroundImage.raycastTarget = false;
+
+            var fillArea = FindChildRect(sliderRoot, "Fill Area");
+            if (fillArea == null)
+            {
+                fillArea = CreateRect("Fill Area", sliderRoot, new Vector2(0f, 0.5f), new Vector2(1f, 0.5f), new Vector2(0.5f, 0.5f), Vector2.zero, new Vector2(-28f, 16f));
+            }
+            var fillRoot = FindChildRect(fillArea, "Fill");
+            if (fillRoot == null)
+            {
+                fillRoot = CreateRect("Fill", fillArea, Vector2.zero, Vector2.one, new Vector2(0.5f, 0.5f), Vector2.zero, Vector2.zero);
+            }
+            var fillImage = fillRoot.GetComponent<Image>();
+            if (fillImage == null)
+            {
+                fillImage = fillRoot.gameObject.AddComponent<Image>();
+            }
+            fillImage.color = new Color(1f, 0.25f, 0.62f, 1f);
+            fillImage.raycastTarget = false;
+
+            var handleSlideArea = FindChildRect(sliderRoot, "Handle Slide Area");
+            if (handleSlideArea == null)
+            {
+                handleSlideArea = CreateRect("Handle Slide Area", sliderRoot, Vector2.zero, Vector2.one, new Vector2(0.5f, 0.5f), Vector2.zero, new Vector2(-28f, 0f));
+            }
+            var handleRoot = FindChildRect(handleSlideArea, "Handle");
+            if (handleRoot == null)
+            {
+                handleRoot = CreateRect("Handle", handleSlideArea, new Vector2(0f, 0.5f), new Vector2(0f, 0.5f), new Vector2(0.5f, 0.5f), Vector2.zero, new Vector2(42f, 42f));
+            }
+            var handleImage = handleRoot.GetComponent<Image>();
+            if (handleImage == null)
+            {
+                handleImage = handleRoot.gameObject.AddComponent<Image>();
+            }
+            if (handleImage.sprite == null)
+            {
+                handleImage.sprite = CreateCircleSprite(64, new Color(1f, 0.95f, 0.98f, 1f), new Color(0.76f, 0.08f, 0.4f, 1f), 7f);
+            }
+            handleImage.preserveAspect = true;
+            handleImage.raycastTarget = true;
+
+            soundVolumeSlider.fillRect = fillRoot;
+            soundVolumeSlider.handleRect = handleRoot;
+            soundVolumeSlider.targetGraphic = handleImage;
+            soundVolumeSlider.direction = Slider.Direction.LeftToRight;
+            soundVolumeSlider.minValue = 0f;
+            soundVolumeSlider.maxValue = 1f;
+            soundVolumeSlider.wholeNumbers = false;
+            soundVolumeSlider.navigation = new Navigation { mode = Navigation.Mode.None };
+            soundVolumeSlider.onValueChanged.RemoveListener(SetMasterVolume);
+            soundVolumeSlider.onValueChanged.AddListener(SetMasterVolume);
+            soundVolumeSlider.SetValueWithoutNotify(masterVolume);
+
+            var sliderRelay = sliderRoot.GetComponent<SoundVolumeSliderRelay>();
+            if (sliderRelay == null)
+            {
+                sliderRelay = sliderRoot.gameObject.AddComponent<SoundVolumeSliderRelay>();
+            }
+            sliderRelay.Configure(this);
+
+            UpdateSoundVolumeValueText();
+            soundVolumeSliderPanelRoot.gameObject.SetActive(false);
+        }
+
+        void ToggleSoundVolumeSlider()
+        {
+            if (soundVolumeSliderPanelRoot == null)
+            {
+                EnsureSoundVolumeSlider();
+            }
+
+            if (soundVolumeSliderPanelRoot == null)
+            {
+                return;
+            }
+
+            SetSoundVolumeSliderVisible(!soundVolumeSliderPanelRoot.gameObject.activeSelf);
+        }
+
+        void SetSoundVolumeSliderVisible(bool visible)
+        {
+            if (soundVolumeSliderPanelRoot == null)
+            {
+                return;
+            }
+
+            if (!visible)
+            {
+                SaveMasterVolume();
+            }
+            else
+            {
+                if (soundVolumeSlider != null)
+                {
+                    soundVolumeSlider.SetValueWithoutNotify(masterVolume);
+                }
+                UpdateSoundVolumeValueText();
+                soundVolumeSliderPanelRoot.SetAsLastSibling();
+            }
+
+            soundVolumeSliderPanelRoot.gameObject.SetActive(visible);
         }
 
         void EnsureGameOverCanvas()
@@ -3916,14 +4133,97 @@ namespace GameKamiStreaming
                 costRect.anchoredPosition = Vector2.zero;
                 costRect.sizeDelta = Vector2.zero;
             }
-            skillTreeTooltipTitleText = titleRect?.GetComponent<TextMeshProUGUI>();
-            skillTreeTooltipDescriptionText = descriptionRect?.GetComponent<TextMeshProUGUI>();
-            skillTreeTooltipCostText = costRect?.GetComponent<TextMeshProUGUI>();
             skillTreeTooltipTitleLegacyText = titleRect?.GetComponent<Text>();
             skillTreeTooltipDescriptionLegacyText = descriptionRect?.GetComponent<Text>();
             skillTreeTooltipCostLegacyText = costRect?.GetComponent<Text>();
+            skillTreeTooltipTitleText = EnsureSkillTreeTooltipText(
+                titleRect,
+                38f,
+                FontStyles.Bold,
+                TextAlignmentOptions.MidlineLeft);
+            skillTreeTooltipDescriptionText = EnsureSkillTreeTooltipText(
+                descriptionRect,
+                28f,
+                FontStyles.Normal,
+                TextAlignmentOptions.TopLeft);
+            skillTreeTooltipCostText = EnsureSkillTreeTooltipText(
+                costRect,
+                28f,
+                FontStyles.Bold,
+                TextAlignmentOptions.MidlineLeft);
             EnsureSkillTreeTooltipCostEntries();
             skillTreeTooltipRoot.gameObject.SetActive(false);
+        }
+
+        static TextMeshProUGUI EnsureSkillTreeTooltipText(
+            RectTransform textRect,
+            float fontSize,
+            FontStyles fontStyle,
+            TextAlignmentOptions alignment)
+        {
+            if (textRect == null)
+            {
+                return null;
+            }
+
+            var legacyText = textRect.GetComponent<Text>();
+            var tmpText = textRect.GetComponent<TextMeshProUGUI>();
+            var initialText = legacyText != null
+                ? legacyText.text
+                : tmpText != null ? tmpText.text : string.Empty;
+
+            if (tmpText == null && legacyText != null)
+            {
+                var bakedTextRect = FindChildRect(textRect, "Baked TMP Text");
+                if (bakedTextRect == null)
+                {
+                    bakedTextRect = CreateRect(
+                        "Baked TMP Text",
+                        textRect,
+                        Vector2.zero,
+                        Vector2.one,
+                        new Vector2(0.5f, 0.5f),
+                        Vector2.zero,
+                        Vector2.zero);
+                }
+
+                bakedTextRect.SetParent(textRect, false);
+                bakedTextRect.anchorMin = Vector2.zero;
+                bakedTextRect.anchorMax = Vector2.one;
+                bakedTextRect.pivot = new Vector2(0.5f, 0.5f);
+                bakedTextRect.anchoredPosition = Vector2.zero;
+                bakedTextRect.sizeDelta = Vector2.zero;
+                tmpText = bakedTextRect.GetComponent<TextMeshProUGUI>();
+                if (tmpText == null)
+                {
+                    tmpText = bakedTextRect.gameObject.AddComponent<TextMeshProUGUI>();
+                }
+            }
+            else if (tmpText == null)
+            {
+                tmpText = textRect.gameObject.AddComponent<TextMeshProUGUI>();
+            }
+
+            if (tmpText == null)
+            {
+                return null;
+            }
+
+            tmpText.text = initialText;
+            tmpText.font = LoadKaturiSdfFont();
+            tmpText.fontSize = fontSize;
+            tmpText.fontStyle = fontStyle;
+            tmpText.alignment = alignment;
+            tmpText.color = new Color(0.2f, 0.08f, 0.3f, 0.95f);
+            tmpText.raycastTarget = false;
+
+            if (legacyText != null)
+            {
+                legacyText.enabled = false;
+                legacyText.raycastTarget = false;
+            }
+
+            return tmpText;
         }
 
         void ShowSkillTreeTooltip(BaseEventData eventData)
@@ -4168,9 +4468,8 @@ namespace GameKamiStreaming
             if (skillTreeTooltipCostIconRoot == null)
             {
                 skillTreeTooltipCostEntries.Clear();
-                var costRect = skillTreeTooltipCostText != null
-                    ? skillTreeTooltipCostText.rectTransform
-                    : FindChildRect(skillTreeTooltipRoot, "Cost");
+                var costRect = FindChildRect(skillTreeTooltipRoot, "Cost") ??
+                    (skillTreeTooltipCostText != null ? skillTreeTooltipCostText.rectTransform : null);
                 if (costRect == null)
                 {
                     return;
@@ -4183,7 +4482,9 @@ namespace GameKamiStreaming
                 }
             }
 
-            skillTreeTooltipCostIconRoot.SetParent(skillTreeTooltipCostText != null ? skillTreeTooltipCostText.rectTransform : skillTreeTooltipCostIconRoot.parent, false);
+            var costContainer = FindChildRect(skillTreeTooltipRoot, "Cost") ??
+                (skillTreeTooltipCostText != null ? skillTreeTooltipCostText.rectTransform : skillTreeTooltipCostIconRoot.parent as RectTransform);
+            skillTreeTooltipCostIconRoot.SetParent(costContainer, false);
             skillTreeTooltipCostIconRoot.anchorMin = Vector2.zero;
             skillTreeTooltipCostIconRoot.anchorMax = Vector2.one;
             skillTreeTooltipCostIconRoot.pivot = new Vector2(0.5f, 0.5f);
@@ -4194,7 +4495,11 @@ namespace GameKamiStreaming
             for (var i = skillTreeTooltipCostEntries.Count; i < SkillTreeTooltipCostEntryCount; i++)
             {
                 var column = i % SkillTreeTooltipCostColumns;
-                var row = i / SkillTreeTooltipCostColumns;
+                // Keep the first four materials in their existing positions. Additional
+                // materials use the row directly above instead of continuing downward.
+                var row = i < SkillTreeTooltipBaseCostEntryCount
+                    ? i / SkillTreeTooltipCostColumns
+                    : -1;
                 var rowHeight = 1f / SkillTreeTooltipCostRows;
                 var entryRoot = FindChildRect(skillTreeTooltipCostIconRoot, "Resource Cost " + i);
                 if (entryRoot == null)
@@ -4284,7 +4589,7 @@ namespace GameKamiStreaming
             ShowSkillTreeTooltip(row);
             if (!HasSkillPrerequisite(row))
             {
-                SetSkillTreeTooltipCostStatus(RequiresManagerActivation(row) && !IsManagerActivationComplete()
+                SetSkillTreeTooltipCostStatus(SkillProgressionRules.RequiresManagerActivation(row) && !IsManagerActivationComplete()
                     ? "매니저 활성화 강화 필요"
                     : "이전 강화 완료 필요");
                 return;
@@ -4305,48 +4610,16 @@ namespace GameKamiStreaming
 
         bool HasSkillPrerequisite(SkillTreeRow row)
         {
-            if (row == null)
-            {
-                return false;
-            }
-
-            if (RequiresManagerActivation(row) && !IsManagerActivationComplete())
-            {
-                return false;
-            }
-
-            if (row.upgradeRank <= 1 || database == null)
-            {
-                return true;
-            }
-
-            foreach (var previousRow in database.SkillTree)
-            {
-                if (previousRow != null &&
-                    previousRow.reinforcedType == row.reinforcedType &&
-                    previousRow.upgradeRank == row.upgradeRank - 1)
-                {
-                    return IsSkillCompleted(previousRow);
-                }
-            }
-
-            return true;
-        }
-
-        static bool RequiresManagerActivation(SkillTreeRow row)
-        {
-            if (row == null || string.IsNullOrWhiteSpace(row.skillStringKey))
-            {
-                return false;
-            }
-
-            return string.CompareOrdinal(row.skillStringKey, "SD10117") >= 0 &&
-                string.CompareOrdinal(row.skillStringKey, "SD10128") <= 0;
+            return SkillProgressionRules.HasPrerequisite(
+                row,
+                database != null ? database.SkillTree : null,
+                GetSkillUpgradeCount,
+                IsManagerActivationComplete());
         }
 
         bool IsManagerActivationComplete()
         {
-            return skillUpgradeCounts.TryGetValue(ManagerActivationSkillKey, out var count) && count > 0;
+            return skillUpgradeCounts.TryGetValue(SkillProgressionRules.ManagerActivationSkillKey, out var count) && count > 0;
         }
 
         bool CanAffordSkill(SkillTreeRow row)
@@ -4382,14 +4655,7 @@ namespace GameKamiStreaming
 
         int GetCurrentSkillCost(SkillTreeRow row, int baseCost)
         {
-            if (baseCost <= 0)
-            {
-                return 0;
-            }
-
-            var upgradeCount = Mathf.Clamp(GetSkillUpgradeCount(row), 0, 30);
-            var inflatedCost = (long)baseCost * (1L << upgradeCount);
-            return inflatedCost >= int.MaxValue ? int.MaxValue : (int)inflatedCost;
+            return SkillProgressionRules.GetCurrentCost(baseCost, GetSkillUpgradeCount(row));
         }
 
         void ApplySkillEffect(SkillTreeRow row)
@@ -4439,32 +4705,12 @@ namespace GameKamiStreaming
 
         static float GetSkillMultiplier(SkillTreeRow row)
         {
-            return 1f + Mathf.Max(0f, row != null ? row.upAmount : 0f);
+            return SkillProgressionRules.GetStandardMultiplier(row);
         }
 
         static float GetDescriptionBasedPercentMultiplier(SkillTreeRow row)
         {
-            if (row == null)
-            {
-                return 1f;
-            }
-
-            if (row.upgradeRank == 1)
-            {
-                return 1.1f;
-            }
-
-            if (row.upgradeRank == 2)
-            {
-                return 1.3f;
-            }
-
-            if (row.upgradeRank == 3)
-            {
-                return 1.5f;
-            }
-
-            return row.upAmount >= 1f ? row.upAmount : 1f + Mathf.Max(0f, row.upAmount);
+            return SkillProgressionRules.GetRankBasedPercentMultiplier(row);
         }
 
         void StartManagerRoutine()
@@ -4891,7 +5137,7 @@ namespace GameKamiStreaming
             UpdateRoundTimerLabel(false);
             if (roundRemainingSeconds <= 0f)
             {
-                if (currentStage.bossId > 0 && !currentStageBossDefeated)
+                if (StageProgressionRules.EvaluateTimeout(currentStage, currentStageBossDefeated) == StageTimeoutOutcome.GameOver)
                 {
                     ShowGameOverScreen();
                 }
@@ -5170,6 +5416,8 @@ namespace GameKamiStreaming
 
         void ShowGameCanvas()
         {
+            SetSoundVolumeSliderVisible(false);
+
             if (openingSequenceCanvasRoot != null)
             {
                 openingSequenceCanvasRoot.gameObject.SetActive(false);
@@ -6749,16 +6997,20 @@ namespace GameKamiStreaming
             AudioListener.volume = masterVolume;
         }
 
-        void SetMasterVolumeFromPointer(RectTransform controlRect, PointerEventData eventData)
+        void SetMasterVolume(float value)
         {
-            if (controlRect == null || !RectTransformUtility.ScreenPointToLocalPointInRectangle(controlRect, eventData.position, eventData.pressEventCamera, out var localPosition))
-            {
-                return;
-            }
-
-            masterVolume = Mathf.InverseLerp(controlRect.rect.xMin, controlRect.rect.xMax, localPosition.x);
+            masterVolume = Mathf.Clamp01(value);
             AudioListener.volume = masterVolume;
             PlayerPrefs.SetFloat(MasterVolumePreferenceKey, masterVolume);
+            UpdateSoundVolumeValueText();
+        }
+
+        void UpdateSoundVolumeValueText()
+        {
+            if (soundVolumeValueText != null)
+            {
+                soundVolumeValueText.text = "VOLUME " + Mathf.RoundToInt(masterVolume * 100f) + "%";
+            }
         }
 
         void SaveMasterVolume()
@@ -6992,6 +7244,7 @@ namespace GameKamiStreaming
         void ShowStartScreen()
         {
             gameStarted = false;
+            SetSoundVolumeSliderVisible(false);
             if (openingSequenceCanvasRoot != null)
             {
                 openingSequenceCanvasRoot.gameObject.SetActive(false);
