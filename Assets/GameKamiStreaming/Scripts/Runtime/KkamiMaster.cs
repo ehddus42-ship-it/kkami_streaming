@@ -41,7 +41,6 @@ namespace GameKamiStreaming
         const float ManagerDirectionOffsetDegrees = 20f;
         const float ManagerBossOneSpeedFactor = 0.5f;
         const float ManagerBaseMoveSpeedMultiplier = 4f;
-        const int TestResourceGrantAmount = 1500;
         const float KkamiAppearIntervalSeconds = 5f;
         const float ChatAppearIntervalSeconds = 2.2f;
         const int MaxVisibleChatMessages = 7;
@@ -133,7 +132,6 @@ namespace GameKamiStreaming
             "boss_40",
             "boss_50"
         };
-        const string TemporaryStageJumpButtonGroupName = "Temporary Stage Jump Buttons";
         static readonly Dictionary<string, string> SkillTreeIconSpriteIds = new Dictionary<string, string>
         {
             { "SD10101", "skill_mining_speed" },
@@ -180,7 +178,6 @@ namespace GameKamiStreaming
         static readonly Color FifthStageBackgroundColor = new Color(74f / 255f, 48f / 255f, 48f / 255f, 1f);
         const int BossKillPanelCount = 5;
         const float EndingBlackoutDurationSeconds = 1f;
-        static readonly int[] TemporaryStageJumpNumbers = { 9, 19, 29, 39, 49 };
         const float StageIndicatorNumberScale = 1.45f;
         const string StageIndicatorSpriteId = "stage_ui";
         const string BossFrameFormat = "000";
@@ -2457,8 +2454,6 @@ namespace GameKamiStreaming
 
             BuildSkillTreeResourceWallet(root);
             BuildSkillTreeTooltip(root);
-            BuildTestSkillTreeButton(root);
-            BuildTemporaryStageJumpButtons(root);
             startNextStageButton = BuildNextStageButton(root);
             root.gameObject.SetActive(false);
             return root;
@@ -2567,43 +2562,6 @@ namespace GameKamiStreaming
             var binding = row.gameObject.AddComponent<ResourceCounterView>();
             binding.Configure(resource.resourceId, number);
             skillTreeResourceLabels[resource.resourceId] = number;
-        }
-
-        RectTransform BuildTestSkillTreeButton(RectTransform parent)
-        {
-            var rect = CreateRect("Skill Tree Test Button", parent, new Vector2(1f, 1f), new Vector2(1f, 1f), new Vector2(1f, 1f), new Vector2(-56f, -56f), new Vector2(100f, 100f));
-            var image = rect.gameObject.AddComponent<Image>();
-            image.sprite = LoadSprite(SkillTreeTestButtonSpriteId);
-            image.preserveAspect = true;
-            image.raycastTarget = true;
-
-            var button = rect.gameObject.AddComponent<Button>();
-            button.targetGraphic = image;
-            button.onClick.AddListener(GrantAllTestResources);
-
-            var trigger = rect.gameObject.AddComponent<EventTrigger>();
-            AddPointerEvent(trigger, EventTriggerType.PointerEnter, ShowSkillTreeTooltip);
-            AddPointerEvent(trigger, EventTriggerType.PointerExit, HideSkillTreeTooltip);
-            return rect;
-        }
-
-        RectTransform BuildTemporaryStageJumpButtons(RectTransform parent)
-        {
-            var group = CreateRect(TemporaryStageJumpButtonGroupName, parent, new Vector2(1f, 0f), new Vector2(1f, 0f), new Vector2(1f, 0f), new Vector2(-56f, 520f), new Vector2(420f, 84f));
-            for (var i = 0; i < TemporaryStageJumpNumbers.Length; i++)
-            {
-                BuildTemporaryStageJumpButton(group, TemporaryStageJumpNumbers[i], i);
-            }
-
-            return group;
-        }
-
-        RectTransform BuildTemporaryStageJumpButton(RectTransform parent, int stageNumber, int index)
-        {
-            var x = (index - (TemporaryStageJumpNumbers.Length - 1) * 0.5f) * 76f;
-            var rect = CreateRect("Temporary Stage Jump " + stageNumber, parent, new Vector2(0.5f, 0.5f), new Vector2(0.5f, 0.5f), new Vector2(0.5f, 0.5f), new Vector2(x, 0f), new Vector2(70f, 70f));
-            ConfigureTemporaryStageJumpButton(rect, stageNumber);
-            return rect;
         }
 
         RectTransform BuildSkillTreeTooltip(RectTransform parent)
@@ -3407,8 +3365,6 @@ namespace GameKamiStreaming
                 EnsureSkillTreeResourceWallet();
                 EnsureSkillTreeTooltip();
                 EnsureSkillTreeDataButtons();
-                EnsureTestSkillTreeButton();
-                EnsureTemporaryStageJumpButtons();
                 skillTreeCanvasRoot.gameObject.SetActive(false);
                 return;
             }
@@ -3425,8 +3381,6 @@ namespace GameKamiStreaming
                 EnsureSkillTreeResourceWallet();
                 EnsureSkillTreeTooltip();
                 EnsureSkillTreeDataButtons();
-                EnsureTestSkillTreeButton();
-                EnsureTemporaryStageJumpButtons();
                 skillTreeCanvasRoot.gameObject.SetActive(false);
                 return;
             }
@@ -3439,8 +3393,6 @@ namespace GameKamiStreaming
             EnsureSkillTreeResourceWallet();
             EnsureSkillTreeTooltip();
             EnsureSkillTreeDataButtons();
-            EnsureTestSkillTreeButton();
-            EnsureTemporaryStageJumpButtons();
         }
 
         void EnsureSkillTreeBackdrop()
@@ -3699,150 +3651,6 @@ namespace GameKamiStreaming
 
             RegisterSkillTreeResourceLabels(wallet);
             RefreshAllResourceLabels();
-        }
-
-        void EnsureTestSkillTreeButton()
-        {
-            if (skillTreeCanvasRoot == null)
-            {
-                return;
-            }
-
-            var rect = FindChildRect(skillTreeCanvasRoot, "Skill Tree Test Button");
-            if (rect == null)
-            {
-                rect = BuildTestSkillTreeButton(skillTreeCanvasRoot);
-            }
-
-            rect.SetParent(skillTreeCanvasRoot, false);
-            rect.anchorMin = new Vector2(1f, 1f);
-            rect.anchorMax = new Vector2(1f, 1f);
-            rect.pivot = new Vector2(1f, 1f);
-            rect.anchoredPosition = new Vector2(-56f, -56f);
-            rect.sizeDelta = new Vector2(100f, 100f);
-            rect.localScale = Vector3.one;
-            rect.SetAsLastSibling();
-
-            var image = rect.GetComponent<Image>();
-            if (image == null)
-            {
-                image = rect.gameObject.AddComponent<Image>();
-            }
-            image.sprite = LoadSprite(SkillTreeTestButtonSpriteId);
-            image.preserveAspect = true;
-            image.raycastTarget = true;
-
-            var button = rect.GetComponent<Button>();
-            if (button == null)
-            {
-                button = rect.gameObject.AddComponent<Button>();
-            }
-            button.targetGraphic = image;
-            button.onClick.RemoveListener(GrantAllTestResources);
-            button.onClick.AddListener(GrantAllTestResources);
-
-            var trigger = rect.GetComponent<EventTrigger>();
-            if (trigger == null)
-            {
-                trigger = rect.gameObject.AddComponent<EventTrigger>();
-            }
-            trigger.triggers.Clear();
-            AddPointerEvent(trigger, EventTriggerType.PointerEnter, ShowSkillTreeTooltip);
-            AddPointerEvent(trigger, EventTriggerType.PointerExit, HideSkillTreeTooltip);
-        }
-
-        void EnsureTemporaryStageJumpButtons()
-        {
-            if (skillTreeCanvasRoot == null)
-            {
-                return;
-            }
-
-            var group = FindChildRect(skillTreeCanvasRoot, TemporaryStageJumpButtonGroupName);
-            if (group == null)
-            {
-                group = BuildTemporaryStageJumpButtons(skillTreeCanvasRoot);
-            }
-
-            group.SetParent(skillTreeCanvasRoot, false);
-            group.anchorMin = new Vector2(1f, 0f);
-            group.anchorMax = new Vector2(1f, 0f);
-            group.pivot = new Vector2(1f, 0f);
-            group.anchoredPosition = new Vector2(-56f, 520f);
-            group.sizeDelta = new Vector2(420f, 84f);
-            group.localScale = Vector3.one;
-            group.SetAsLastSibling();
-
-            for (var i = 0; i < TemporaryStageJumpNumbers.Length; i++)
-            {
-                var stageNumber = TemporaryStageJumpNumbers[i];
-                var rect = FindChildRect(group, "Temporary Stage Jump " + stageNumber);
-                if (rect == null)
-                {
-                    rect = BuildTemporaryStageJumpButton(group, stageNumber, i);
-                }
-
-                var x = (i - (TemporaryStageJumpNumbers.Length - 1) * 0.5f) * 76f;
-                rect.SetParent(group, false);
-                rect.anchorMin = new Vector2(0.5f, 0.5f);
-                rect.anchorMax = new Vector2(0.5f, 0.5f);
-                rect.pivot = new Vector2(0.5f, 0.5f);
-                rect.anchoredPosition = new Vector2(x, 0f);
-                rect.sizeDelta = new Vector2(70f, 70f);
-                rect.localScale = Vector3.one;
-                ConfigureTemporaryStageJumpButton(rect, stageNumber);
-            }
-        }
-
-        void ConfigureTemporaryStageJumpButton(RectTransform rect, int stageNumber)
-        {
-            var image = rect.GetComponent<Image>();
-            if (image == null)
-            {
-                image = rect.gameObject.AddComponent<Image>();
-            }
-
-            image.sprite = LoadSprite(SkillTreeTestButtonSpriteId);
-            image.preserveAspect = true;
-            image.raycastTarget = true;
-
-            var button = rect.GetComponent<Button>();
-            if (button == null)
-            {
-                button = rect.gameObject.AddComponent<Button>();
-            }
-
-            button.targetGraphic = image;
-            button.onClick.RemoveAllListeners();
-            button.onClick.AddListener(() => StartStageFromSkillTree(stageNumber));
-
-            var label = FindChildRect(rect, "Label");
-            if (label == null)
-            {
-                label = CreateRect("Label", rect, Vector2.zero, Vector2.one, new Vector2(0.5f, 0.5f), Vector2.zero, Vector2.zero);
-            }
-
-            label.SetParent(rect, false);
-            label.anchorMin = Vector2.zero;
-            label.anchorMax = Vector2.one;
-            label.pivot = new Vector2(0.5f, 0.5f);
-            label.anchoredPosition = Vector2.zero;
-            label.sizeDelta = Vector2.zero;
-            label.localScale = Vector3.one;
-
-            var text = label.GetComponent<TextMeshProUGUI>();
-            if (text == null)
-            {
-                text = label.gameObject.AddComponent<TextMeshProUGUI>();
-            }
-
-            text.text = stageNumber.ToString();
-            text.font = LoadKaturiSdfFont();
-            text.fontSize = 24;
-            text.fontStyle = FontStyles.Bold;
-            text.alignment = TextAlignmentOptions.Center;
-            text.color = Color.white;
-            text.raycastTarget = false;
         }
 
         void EnsureSkillTreeDataButtons()
@@ -5030,20 +4838,6 @@ namespace GameKamiStreaming
             return resourceManager != null ? resourceManager.GetAmount(resourceId) : 0;
         }
 
-        void GrantAllTestResources()
-        {
-            // This method is intentionally referenced only by the disposable test button.
-            if (resourceManager == null || database == null)
-            {
-                return;
-            }
-
-            foreach (var resource in database.Resources)
-            {
-                resourceManager.Add(resource.resourceId, TestResourceGrantAmount);
-            }
-        }
-
         void HandleResourceAmountChanged(int resourceId, int amount)
         {
             RefreshResourceLabels(resourceId);
@@ -5392,18 +5186,6 @@ namespace GameKamiStreaming
             }
 
             rect = FindChildRect(skillTreeCanvasRoot, "Skill Tree Resource Wallet");
-            if (rect != null && RectTransformUtility.RectangleContainsScreenPoint(rect, pointerPosition, uiCamera))
-            {
-                return true;
-            }
-
-            rect = FindChildRect(skillTreeCanvasRoot, "Skill Tree Test Button");
-            if (rect != null && RectTransformUtility.RectangleContainsScreenPoint(rect, pointerPosition, uiCamera))
-            {
-                return true;
-            }
-
-            rect = FindChildRect(skillTreeCanvasRoot, TemporaryStageJumpButtonGroupName);
             if (rect != null && RectTransformUtility.RectangleContainsScreenPoint(rect, pointerPosition, uiCamera))
             {
                 return true;
