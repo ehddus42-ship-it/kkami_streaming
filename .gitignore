@@ -44,6 +44,9 @@
 ExportedObj/
 .consulo/
 *.csproj
+!/Tools/Kkami.DataTools/Kkami.DataTools.csproj
+/Tools/Kkami.DataTools/[Bb]in/
+/Tools/Kkami.DataTools/[Oo]bj/
 *.unityproj
 *.sln
 *.slnx

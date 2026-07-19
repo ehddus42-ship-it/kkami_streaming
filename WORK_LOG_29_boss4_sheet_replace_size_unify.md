@@ -12,7 +12,7 @@
 
 ## 관련 파일
 
-- `Assets/GameKamiStreaming/Scripts/Runtime/KkamiPrototypeGame.cs`
+- `Assets/GameKamiStreaming/Scripts/Runtime/KkamiMaster.cs`
 - `Assets/GameKamiStreaming/Resources/GameKamiStreaming/Sprites/vfx_boss4_1.png`
 - `Assets/GameKamiStreaming/Resources/GameKamiStreaming/Sprites/vfx_boss4_01_1.png`
 - `Assets/GameKamiStreaming/Resources/GameKamiStreaming/Sprites/vfx_boss4_02.png`

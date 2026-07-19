@@ -41,7 +41,7 @@
 - `dotdot` 스프라이트를 `:` 문자에도 매핑해서 `0:30` 형식으로 표시한다.
 - 타이머는 현재 스테이지의 `timeLimitSeconds` 값을 기준으로 감소한다.
 - 관련 파일:
-  - `Assets/GameKamiStreaming/Scripts/Runtime/KkamiPrototypeGame.cs`
+  - `Assets/GameKamiStreaming/Scripts/Runtime/KkamiMaster.cs`
   - `Assets/GameKamiStreaming/Scripts/Runtime/PixelNumberLabel.cs`
 
 ## 5. 자원 숫자 확대 효과 제거
@@ -50,7 +50,7 @@
 - 자원 파티클이 점수 위치로 이동하는 연출은 유지했다.
 - 숫자 라벨은 값이 변경되어도 `Vector3.one` 스케일을 유지하도록 했다.
 - 관련 파일:
-  - `Assets/GameKamiStreaming/Scripts/Runtime/KkamiPrototypeGame.cs`
+  - `Assets/GameKamiStreaming/Scripts/Runtime/KkamiMaster.cs`
   - `Assets/GameKamiStreaming/Scripts/Runtime/PixelNumberLabel.cs`
 
 ## 6. 스테이지 종료 후 스킬트리 화면 추가
@@ -62,7 +62,7 @@
 - 버튼을 누르면 스킬트리 캔버스가 숨겨지고 다음 스테이지가 시작된다.
 - 스킬트리 화면이 열려 있는 동안 타이머, 채굴, 기물 리스폰은 멈추도록 처리했다.
 - 관련 파일:
-  - `Assets/GameKamiStreaming/Scripts/Runtime/KkamiPrototypeGame.cs`
+  - `Assets/GameKamiStreaming/Scripts/Runtime/KkamiMaster.cs`
 
 ## 7. 검증 기록
 
@@ -80,13 +80,13 @@
 - 런타임 생성 방식만 있던 `Skill Tree Canvas`를 `KkamiPrototype.unity` 씬 안에 실제 오브젝트로 생성했다.
 - Unity 에디터 메뉴 `GameKamiStreaming/Ensure Editable Skill Tree Canvas`를 추가했다.
 - 해당 메뉴는 씬을 열고 `Skill Tree Canvas`, 전체 화면 스킬트리 필드, 우하단 `NEXT STAGE` 버튼을 생성한 뒤 저장한다.
-- `KkamiPrototypeGame`의 `skillTreeCanvasRoot`, `startNextStageButton` 참조가 씬에 연결되도록 했다.
+- `KkamiMaster`의 `skillTreeCanvasRoot`, `startNextStageButton` 참조가 씬에 연결되도록 했다.
 - `Skill Tree Canvas`는 기본 비활성 상태로 저장해 기존 스테이지 플레이 캔버스를 덮거나 조작하지 않게 했다.
 - 스테이지 종료 시에도 스테이지 캔버스는 끄지 않고, 스킬트리 캔버스만 활성/비활성으로 전환하도록 수정했다.
 - 관련 파일:
   - `Assets/Scenes/KkamiPrototype.unity`
   - `Assets/GameKamiStreaming/Scripts/Editor/KkamiPrototypeSceneBuilder.cs`
-  - `Assets/GameKamiStreaming/Scripts/Runtime/KkamiPrototypeGame.cs`
+  - `Assets/GameKamiStreaming/Scripts/Runtime/KkamiMaster.cs`
 
 ## 9. 스폰 범위 고정
 
@@ -96,10 +96,10 @@
 - 네 점의 축 정렬 바운딩 박스가 아니라 실제 네 꼭짓점 마름모/폴리곤 내부에서 좌표를 샘플링하도록 보강했다.
 - 기물의 네 모서리가 스폰 폴리곤 안에 들어오는 후보를 우선 사용하고, 랜덤 후보가 실패하면 격자 검색으로 내부 후보를 찾는다.
 - 기존 이름 `spawnpoint`였던 판넬은 `spawnpoint4`로 정리했다.
-- `KkamiPrototypeGame`에 네 스폰 포인트 참조를 씬에서 연결했다.
+- `KkamiMaster`에 네 스폰 포인트 참조를 씬에서 연결했다.
 - 관련 파일:
   - `Assets/Scenes/KkamiPrototype.unity`
-  - `Assets/GameKamiStreaming/Scripts/Runtime/KkamiPrototypeGame.cs`
+  - `Assets/GameKamiStreaming/Scripts/Runtime/KkamiMaster.cs`
   - `Assets/GameKamiStreaming/Scripts/Editor/KkamiPrototypeSceneBuilder.cs`
 
 ## 10. 채굴 범위 표시 기준 수정
@@ -108,7 +108,7 @@
 - 커서 표시 여부도 `spawnpoint1`~`spawnpoint4`가 만드는 스폰 마름모 범위 기준으로 변경했다.
 - 스폰 포인트 범위를 얻지 못하는 경우에만 기존 `E` 패널 기준으로 fallback한다.
 - 관련 파일:
-  - `Assets/GameKamiStreaming/Scripts/Runtime/KkamiPrototypeGame.cs`
+  - `Assets/GameKamiStreaming/Scripts/Runtime/KkamiMaster.cs`
 
 ## 11. 채굴 GIF 모션 판정 연동
 
@@ -124,7 +124,7 @@
   - 경고 0개
   - 오류 0개
 - 관련 파일:
-  - `Assets/GameKamiStreaming/Scripts/Runtime/KkamiPrototypeGame.cs`
+  - `Assets/GameKamiStreaming/Scripts/Runtime/KkamiMaster.cs`
   - `Assets/GameKamiStreaming/Resources/GameKamiStreaming/Sprites/mining_attack/frame_000.png` ~ `frame_011.png`
 
 ## 12. kkami appear 랜덤 표정 출력
@@ -140,7 +140,7 @@
   - 경고 0개
   - 오류 0개
 - 관련 파일:
-  - `Assets/GameKamiStreaming/Scripts/Runtime/KkamiPrototypeGame.cs`
+  - `Assets/GameKamiStreaming/Scripts/Runtime/KkamiMaster.cs`
   - `Assets/GameKamiStreaming/Resources/GameKamiStreaming/Sprites/kkami_appear/love.png`
   - `Assets/GameKamiStreaming/Resources/GameKamiStreaming/Sprites/kkami_appear/confused.png`
   - `Assets/GameKamiStreaming/Resources/GameKamiStreaming/Sprites/kkami_appear/angry.png`
@@ -160,7 +160,7 @@
   - 경고 0개
   - 오류 0개
 - 관련 파일:
-  - `Assets/GameKamiStreaming/Scripts/Runtime/KkamiPrototypeGame.cs`
+  - `Assets/GameKamiStreaming/Scripts/Runtime/KkamiMaster.cs`
 
 ## 14. 스폰 기물 크기 및 스폰 포인트 비율 보정
 
@@ -173,7 +173,7 @@
   - 경고 0개
   - 오류 0개
 - 관련 파일:
-  - `Assets/GameKamiStreaming/Scripts/Runtime/KkamiPrototypeGame.cs`
+  - `Assets/GameKamiStreaming/Scripts/Runtime/KkamiMaster.cs`
   - `Assets/GameKamiStreaming/Scripts/Editor/KkamiPrototypeSceneBuilder.cs`
   - `Assets/Scenes/KkamiPrototype.unity`
 
@@ -188,7 +188,7 @@
   - 경고 0개
   - 오류 0개
 - 관련 파일:
-  - `Assets/GameKamiStreaming/Scripts/Runtime/KkamiPrototypeGame.cs`
+  - `Assets/GameKamiStreaming/Scripts/Runtime/KkamiMaster.cs`
   - `Assets/Scenes/KkamiPrototype.unity`
 
 ## 16. 스킬트리 배경 이미지 적용
@@ -201,7 +201,7 @@
   - 경고 0개
   - 오류 0개
 - 관련 파일:
-  - `Assets/GameKamiStreaming/Scripts/Runtime/KkamiPrototypeGame.cs`
+  - `Assets/GameKamiStreaming/Scripts/Runtime/KkamiMaster.cs`
   - `Assets/GameKamiStreaming/Resources/GameKamiStreaming/Sprites/skilltree_bg.png`
   - `Assets/Scenes/KkamiPrototype.unity`
 
@@ -222,7 +222,7 @@
   - 경고 0개
   - 오류 0개
 - 관련 파일:
-  - `Assets/GameKamiStreaming/Scripts/Runtime/KkamiPrototypeGame.cs`
+  - `Assets/GameKamiStreaming/Scripts/Runtime/KkamiMaster.cs`
   - `Assets/GameKamiStreaming/Scripts/Runtime/DestructiblePieceView.cs`
   - `Assets/GameKamiStreaming/Scripts/Runtime/BossPieceView.cs`
   - `Assets/GameKamiStreaming/Resources/GameKamiStreaming/DataTables/piece.csv`
@@ -240,7 +240,7 @@
   - 경고 0개
   - 오류 0개
 - 관련 파일:
-  - `Assets/GameKamiStreaming/Scripts/Runtime/KkamiPrototypeGame.cs`
+  - `Assets/GameKamiStreaming/Scripts/Runtime/KkamiMaster.cs`
   - `Assets/GameKamiStreaming/Scripts/Runtime/BossPieceView.cs`
 
 ## 19. 채굴 UI 표시 순서 보강
@@ -253,7 +253,7 @@
   - 경고 0개
   - 오류 0개
 - 관련 파일:
-  - `Assets/GameKamiStreaming/Scripts/Runtime/KkamiPrototypeGame.cs`
+  - `Assets/GameKamiStreaming/Scripts/Runtime/KkamiMaster.cs`
 
 ## 20. boss_1 이동 값 조정
 

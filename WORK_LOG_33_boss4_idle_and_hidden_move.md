@@ -9,7 +9,7 @@
 ## 변경 파일
 
 - `Assets/GameKamiStreaming/Scripts/Runtime/BossPieceView.cs`
-- `Assets/GameKamiStreaming/Scripts/Runtime/KkamiPrototypeGame.cs`
+- `Assets/GameKamiStreaming/Scripts/Runtime/KkamiMaster.cs`
 - `Assets/GameKamiStreaming/Resources/GameKamiStreaming/DataTables/effects.csv`
 - `Assets/GameKamiStreaming/Resources/GameKamiStreaming/DataTables/xlsx_export/res_vfx.csv`
 - `Assets/GameKamiStreaming/Resources/GameKamiStreaming/Sprites/vfx_boss4_idle.png`

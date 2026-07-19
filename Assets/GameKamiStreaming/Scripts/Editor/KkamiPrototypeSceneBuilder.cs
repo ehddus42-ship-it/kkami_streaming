@@ -1,4 +1,4 @@
-﻿using GameKamiStreaming;
+using GameKamiStreaming;
 using UnityEditor;
 using UnityEditor.Events;
 using UnityEditor.SceneManagement;
@@ -18,9 +18,11 @@ namespace GameKamiStreamingEditor
             ConfigureSpriteImports();
             var scene = EditorSceneManager.NewScene(NewSceneSetup.EmptyScene, NewSceneMode.Single);
 
-            var bootstrap = new GameObject("KkamiPrototypeGame");
-            var game = bootstrap.AddComponent<KkamiPrototypeGame>();
+            var bootstrap = new GameObject("KkamiMaster");
+            var game = bootstrap.AddComponent<KkamiMaster>();
             game.BuildEditableSceneLayout();
+            EnsurePersistentStartGameButton(game);
+            EnsurePersistentExitGameButton(game);
 
             EditorSceneManager.SaveScene(scene, ScenePath);
             AddSceneToBuildSettings(ScenePath);
@@ -61,7 +63,7 @@ namespace GameKamiStreamingEditor
                 }
             }
 
-            var game = Object.FindFirstObjectByType<KkamiPrototypeGame>();
+            var game = Object.FindFirstObjectByType<KkamiMaster>();
             if (game != null)
             {
                 EditorUtility.SetDirty(game);
@@ -79,11 +81,11 @@ namespace GameKamiStreamingEditor
             AssetDatabase.Refresh();
             ConfigureSkillTreeSpriteImports();
             var scene = EditorSceneManager.OpenScene(ScenePath, OpenSceneMode.Single);
-            var game = Object.FindFirstObjectByType<KkamiPrototypeGame>();
+            var game = Object.FindFirstObjectByType<KkamiMaster>();
             if (game == null)
             {
-                var bootstrap = new GameObject("KkamiPrototypeGame");
-                game = bootstrap.AddComponent<KkamiPrototypeGame>();
+            var bootstrap = new GameObject("KkamiMaster");
+            game = bootstrap.AddComponent<KkamiMaster>();
             }
 
             game.EnsureEditableSkillTreeCanvas();
@@ -103,15 +105,16 @@ namespace GameKamiStreamingEditor
         {
             AssetDatabase.Refresh();
             var scene = EditorSceneManager.OpenScene(ScenePath, OpenSceneMode.Single);
-            var game = Object.FindFirstObjectByType<KkamiPrototypeGame>();
+            var game = Object.FindFirstObjectByType<KkamiMaster>();
             if (game == null)
             {
-                var bootstrap = new GameObject("KkamiPrototypeGame");
-                game = bootstrap.AddComponent<KkamiPrototypeGame>();
+            var bootstrap = new GameObject("KkamiMaster");
+            game = bootstrap.AddComponent<KkamiMaster>();
             }
 
             game.EnsureEditableStartScreen();
             EnsurePersistentStartGameButton(game);
+            EnsurePersistentExitGameButton(game);
             EditorUtility.SetDirty(game);
             EditorSceneManager.MarkSceneDirty(scene);
             EditorSceneManager.SaveScene(scene);
@@ -140,7 +143,7 @@ namespace GameKamiStreamingEditor
             }
         }
 
-        static void EnsurePersistentNextStageButton(KkamiPrototypeGame game)
+        static void EnsurePersistentNextStageButton(KkamiMaster game)
         {
             var buttons = Object.FindObjectsByType<Button>(FindObjectsInactive.Include, FindObjectsSortMode.None);
             foreach (var button in buttons)
@@ -152,7 +155,7 @@ namespace GameKamiStreamingEditor
 
                 for (var i = 0; i < button.onClick.GetPersistentEventCount(); i++)
                 {
-                    if (button.onClick.GetPersistentTarget(i) == game && button.onClick.GetPersistentMethodName(i) == nameof(KkamiPrototypeGame.StartNextStageFromSkillTree))
+                    if (button.onClick.GetPersistentTarget(i) == game && button.onClick.GetPersistentMethodName(i) == nameof(KkamiMaster.StartNextStageFromSkillTree))
                     {
                         return;
                     }
@@ -164,7 +167,7 @@ namespace GameKamiStreamingEditor
             }
         }
 
-        static void EnsurePersistentStartGameButton(KkamiPrototypeGame game)
+        static void EnsurePersistentStartGameButton(KkamiMaster game)
         {
             var buttons = Object.FindObjectsByType<Button>(FindObjectsInactive.Include, FindObjectsSortMode.None);
             foreach (var button in buttons)
@@ -176,7 +179,7 @@ namespace GameKamiStreamingEditor
 
                 for (var i = 0; i < button.onClick.GetPersistentEventCount(); i++)
                 {
-                    if (button.onClick.GetPersistentTarget(i) == game && button.onClick.GetPersistentMethodName(i) == nameof(KkamiPrototypeGame.StartGameFromStartScreen))
+                    if (button.onClick.GetPersistentTarget(i) == game && button.onClick.GetPersistentMethodName(i) == nameof(KkamiMaster.StartGameFromStartScreen))
                     {
                         return;
                     }
@@ -188,7 +191,31 @@ namespace GameKamiStreamingEditor
             }
         }
 
-        static void EnsureEditableSpawnPoints(KkamiPrototypeGame game)
+        static void EnsurePersistentExitGameButton(KkamiMaster game)
+        {
+            var buttons = Object.FindObjectsByType<Button>(FindObjectsInactive.Include, FindObjectsSortMode.None);
+            foreach (var button in buttons)
+            {
+                if (button.name != "Exit Game Button")
+                {
+                    continue;
+                }
+
+                for (var i = 0; i < button.onClick.GetPersistentEventCount(); i++)
+                {
+                    if (button.onClick.GetPersistentTarget(i) == game && button.onClick.GetPersistentMethodName(i) == nameof(KkamiMaster.QuitGameFromStartScreen))
+                    {
+                        return;
+                    }
+                }
+
+                UnityEventTools.AddPersistentListener(button.onClick, game.QuitGameFromStartScreen);
+                EditorUtility.SetDirty(button);
+                return;
+            }
+        }
+
+        static void EnsureEditableSpawnPoints(KkamiMaster game)
         {
             var legacySpawnPoint = GameObject.Find("spawnpoint");
             if (legacySpawnPoint != null && GameObject.Find("spawnpoint4") == null)
